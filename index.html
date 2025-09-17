@@ -43,7 +43,7 @@
   <div class="wrap">
 	<div class="left">
 	  <div class="title">ぶりスイカゲーム（ご当地版）</div>
-	  <div class="subtitle">石川の出世魚：<b>魚卵 → 稚魚 → こぞくら → ふくらぎ → がんど → ぶり → ぶり大根／鰤しゃぶ</b></div>
+	  <div class="subtitle">石川の出世魚：<b>魚卵 → 稚魚 → こぞくら → ふくらぎ → がんど → ぶり → 刺身 → 寿司 → ぶり大根 → 鰤しゃぶ</b></div>
 
 	  <div class="hud">
 		<div class="card">
@@ -80,11 +80,11 @@
   </div>
 
   <script>
-  // レベル画像プリロード（0～7）
-  const IMAGES = new Array(8);
+  // レベル画像プリロード（LEVELS.length）
+  const IMAGES = [];
   function preloadImages(){
     return Promise.all(
-      Array.from({length:8}, (_,i)=> new Promise(resolve=>{
+      Array.from({length: LEVELS.length}, (_,i)=> new Promise(resolve=>{
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = ()=>{ IMAGES[i]=img; resolve(); };
@@ -96,14 +96,16 @@
 
   // ========== ゲーム定義 ==========
   const LEVELS = [
-	{ name: '魚卵', color: '#f8d568', r: 24, score: 1 },
-	{ name: '稚魚', color: '#9be1fa', r: 28, score: 2 },
+	{ name: '魚卵',   color: '#f8d568', r: 24, score: 1 },
+	{ name: '稚魚',   color: '#9be1fa', r: 28, score: 2 },
 	{ name: 'こぞくら', color: '#6ed6a1', r: 34, score: 4 },
 	{ name: 'ふくらぎ', color: '#3fd0c9', r: 44, score: 8 },
-	{ name: 'がんど', color: '#3b82f6', r: 58, score: 16 },
-	{ name: 'ぶり', color: '#c084fc', r: 78, score: 64 },
-	{ name: 'ぶり大根', color: '#ff9f68', r: 88, score: 128, isDish:true },
-	{ name: '鰤しゃぶ', color: '#ffd166', r: 88, score: 128, isDish:true },
+	{ name: 'がんど',  color: '#3b82f6', r: 58, score: 16 },
+	{ name: 'ぶり',   color: '#c084fc', r: 78, score: 64 },
+	{ name: '刺身',   color: '#f472b6', r: 84, score: 96, isDish:true },
+	{ name: '寿司',   color: '#60a5fa', r: 88, score: 128, isDish:true },
+	{ name: 'ぶり大根', color: '#ff9f68', r: 88, score: 160, isDish:true },
+	{ name: '鰤しゃぶ', color: '#ffd166', r: 88, score: 192, isDish:true },
   ];
 
   // 出現確率（序盤は低レベルが多め）
@@ -135,25 +137,46 @@
   const nextBox = document.getElementById('nextBox');
   const legendBox = document.getElementById('legend');
 
-  // レジェンド描画
+  // レジェンド描画（画像が無ければ色ドットにフォールバック）
   LEVELS.forEach((lv,i)=>{
-	const div = document.createElement('div');
-	div.className='pill';
-	div.innerHTML = `<img class="thumb" alt="${lv.name}" src="img/${i}.png"/>${i+1}. ${lv.name}`;
-	legendBox.appendChild(div);
+    const div = document.createElement('div');
+    div.className='pill';
+    const img = new Image();
+    img.className = 'thumb';
+    img.alt = lv.name;
+    img.src = `img/${i}.png`;
+    img.onerror = ()=>{
+      img.remove();
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = lv.color;
+      div.insertBefore(dot, div.firstChild);
+    };
+    div.appendChild(img);
+    const label = document.createElement('span');
+    label.textContent = `${i+1}. ${lv.name}`;
+    div.appendChild(label);
+    legendBox.appendChild(div);
   });
 
   function renderNext() {
-	nextBox.innerHTML = '';
-	const lv = LEVELS[nextLevel];
-	const img = document.createElement('img');
-	img.className='thumb';
-	img.src = `img/${nextLevel}.png`;
-	img.alt = lv.name;
-	const label = document.createElement('span');
-	label.textContent = lv.name;
-	nextBox.appendChild(img);
-	nextBox.appendChild(label);
+    nextBox.innerHTML = '';
+    const lv = LEVELS[nextLevel];
+    const img = new Image();
+    img.className = 'thumb';
+    img.alt = lv.name;
+    img.src = `img/${nextLevel}.png`;
+    img.onerror = ()=>{
+      img.remove();
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = lv.color;
+      nextBox.insertBefore(dot, nextBox.firstChild);
+    };
+    const label = document.createElement('span');
+    label.textContent = lv.name;
+    nextBox.appendChild(img);
+    nextBox.appendChild(label);
   }
   renderNext();
 
@@ -287,34 +310,45 @@
       const a=balls[i], b=balls[j];
       if (!closeEnough(a,b)) continue; // バブル同士の接触
 
-      // (A) 料理×料理 → 消滅（ボーナス）
-      if (LEVELS[a.level].isDish && LEVELS[b.level].isDish){
-        balls.splice(j,1); balls.splice(i,1);
-        score += 256;
-		  break outer;
-		}
-		// (B) ぶり×ぶり → ランダム料理へ（ぶつかれば必ず変化）
-		if (a.level===5 && b.level===5){
-		  const nx=(a.x+b.x)/2, ny=(a.y+b.y)/2;
-		  const dishLevel = 6 + Math.floor(Math.random()*2); // 6:ぶり大根, 7:鰤しゃぶ
-		  const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[dishLevel].r, level:dishLevel, id:crypto.randomUUID() };
-		  score += LEVELS[a.level].score;
-		  balls.splice(j,1); balls.splice(i,1);
-		  balls.push(nb);
-		  break outer;
-		}
-		// (C) 通常の出世（ぶり未満）
-		if (a.level===b.level && a.level < 5){
-		  const nx=(a.x+b.x)/2, ny=(a.y+b.y)/2;
-		  const nl = a.level+1;
-		  const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
-		  score += LEVELS[a.level].score;
-		  balls.splice(j,1); balls.splice(i,1);
-		  balls.push(nb);
-		  break outer;
-		}
-	  }
-	}
+      // 同レベルのみ合体（異レベルは何もしない）
+      if (a.level===b.level){
+        const nx=(a.x+b.x)/2, ny=(a.y+b.y)/2;
+        // 0〜4: 通常の出世
+        if (a.level < 5){
+          const nl = a.level+1;
+          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          score += LEVELS[a.level].score;
+          balls.splice(j,1); balls.splice(i,1);
+          balls.push(nb);
+          break outer;
+        }
+        // 5: ぶり → 6: 刺身
+        if (a.level === 5){
+          const nl = 6;
+          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          score += LEVELS[a.level].score;
+          balls.splice(j,1); balls.splice(i,1);
+          balls.push(nb);
+          break outer;
+        }
+        // 6〜8: 刺身→寿司→ぶり大根→鰤しゃぶ
+        if (a.level >= 6 && a.level <= 8){
+          const nl = a.level + 1;
+          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          score += LEVELS[a.level].score;
+          balls.splice(j,1); balls.splice(i,1);
+          balls.push(nb);
+          break outer;
+        }
+        // 9: 鰤しゃぶ → 合体で消滅（ボーナス）
+        if (a.level === 9){
+          balls.splice(j,1); balls.splice(i,1);
+          score += LEVELS[a.level].score;
+          break outer;
+        }
+      }
+    }
+  }
 
 	draw();
 
