@@ -56,10 +56,16 @@ const nextBox = document.getElementById('nextBox');
 const legendBox = document.getElementById('legend');
 const fxLayer = document.getElementById('fx');
 const stageEl = document.querySelector('.stage');
+const bgmToggleBtn = document.getElementById('bgmToggle');
+const bgmVolumeSlider = document.getElementById('bgmVolume');
 
 // 効果音＆演出
 let audioEnabled = true;
 let audioCtx = null;
+let bgmStarted = false;
+let bgmAudio = null;
+let bgmMutedPref = JSON.parse(localStorage.getItem('bgmMuted')||'false');
+let bgmVolumePref = Number(localStorage.getItem('bgmVolume')||'0.35');
 function ensureAudio(){
   if (!audioEnabled) return null;
   if (audioCtx) return audioCtx;
@@ -68,6 +74,48 @@ function ensureAudio(){
   }catch(e){ audioCtx = null; }
   return audioCtx;
 }
+function startBgm(){
+  if (bgmStarted) return;
+  bgmStarted = true;
+  try{
+    bgmAudio = new Audio('buri.mp3');
+    bgmAudio.loop = true;
+    bgmAudio.volume = Math.max(0, Math.min(1, bgmVolumePref));
+    bgmAudio.muted = !!bgmMutedPref;
+    bgmAudio.play().catch(()=>{});
+  }catch(e){ /* ignore */ }
+}
+function updateBgmUi(){
+  if (bgmToggleBtn){ bgmToggleBtn.textContent = (bgmAudio && bgmAudio.muted) || bgmMutedPref ? 'BGM: OFF' : 'BGM: ON'; }
+  if (bgmVolumeSlider){ bgmVolumeSlider.value = String(bgmAudio ? bgmAudio.volume : bgmVolumePref); }
+}
+if (bgmToggleBtn){
+  bgmToggleBtn.addEventListener('click', ()=>{
+    startBgm();
+    if (bgmAudio){
+      bgmAudio.muted = !bgmAudio.muted;
+      bgmMutedPref = bgmAudio.muted;
+      localStorage.setItem('bgmMuted', JSON.stringify(bgmMutedPref));
+    } else {
+      bgmMutedPref = !bgmMutedPref;
+      localStorage.setItem('bgmMuted', JSON.stringify(bgmMutedPref));
+    }
+    updateBgmUi();
+  });
+}
+if (bgmVolumeSlider){
+  bgmVolumeSlider.addEventListener('input', ()=>{
+    startBgm();
+    const v = Math.max(0, Math.min(1, Number(bgmVolumeSlider.value)));
+    if (bgmAudio) bgmAudio.volume = v;
+    bgmVolumePref = v;
+    localStorage.setItem('bgmVolume', String(v));
+    updateBgmUi();
+  });
+  // 初期値反映
+  bgmVolumeSlider.value = String(bgmVolumePref);
+}
+updateBgmUi();
 // シンプル太鼓ヒット
 function taiko(time, freq=110, dur=0.25){
   const ctxa = ensureAudio(); if (!ctxa) return;
@@ -104,6 +152,27 @@ function playFestivalBig(){
   const t = ctxa.currentTime + 0.01;
   taiko(t, 140); taiko(t+0.14, 100); taiko(t+0.28, 140); taiko(t+0.42, 85);
   smallBell(t+0.5);
+}
+// ぶつかり効果音（短いコツン音）
+let lastHitTime = 0;
+function playHit(intensity=0.4){
+  const ctxa = ensureAudio(); if (!ctxa) return;
+  const now = ctxa.currentTime;
+  const osc = ctxa.createOscillator();
+  const gain = ctxa.createGain();
+  const filt = ctxa.createBiquadFilter();
+  filt.type = 'lowpass'; filt.frequency.value = 1200;
+  osc.type = 'square';
+  const f0 = 240;
+  osc.frequency.setValueAtTime(f0, now);
+  osc.frequency.exponentialRampToValueAtTime(f0*0.7, now+0.04);
+  const amp = Math.max(0.05, Math.min(0.3, intensity*0.25));
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(amp, now+0.005);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now+0.08);
+  osc.connect(filt).connect(gain).connect(ctxa.destination);
+  osc.start(now);
+  osc.stop(now+0.1);
 }
 function showBurst(text, x, y, kind='small'){
   const rect = canvas.getBoundingClientRect();
@@ -193,6 +262,7 @@ window.addEventListener('keydown', e=>{
   if (e.code==='Space') dropHeld();
   if (e.code==='KeyR') hardReset();
   ensureAudio();
+  startBgm();
 });
 window.addEventListener('keyup', e=>{
   if (e.code==='ArrowLeft' || e.code==='KeyA') KEYS.left=false;
@@ -215,6 +285,7 @@ function setCurrentXFromClientX(clientX){
 canvas.addEventListener('pointerdown', (e)=>{
   e.preventDefault();
   ensureAudio();
+  startBgm();
   pointerActive = true;
   setCurrentXFromClientX(e.clientX);
 });
@@ -259,6 +330,13 @@ function resolveCircle(a,b){
       const ix = imp*nx, iy = imp*ny;
       a.vx -= ix/m1; a.vy -= iy/m1;
       b.vx += ix/m2; b.vy += iy/m2;
+      // ぶつかり音（スパム防止の簡易スロットル）
+      const nowMs = performance.now();
+      const speed = Math.min(1.0, (-vn)/8); // 当たり強度
+      if (speed > 0.12 && nowMs - lastHitTime > 70){
+        playHit(speed);
+        lastHitTime = nowMs;
+      }
     }
   }
 }

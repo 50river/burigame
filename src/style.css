@@ -30,6 +30,8 @@ canvas{width:100%;height:auto;touch-action:none}
 .controls{display:grid;gap:8px;margin-top:8px}
 .controls button{background:var(--accent);color:#052a2a;border:none;border-radius:12px;padding:10px 12px;font-weight:700;cursor:pointer}
 .controls button.secondary{background:#203456;color:#d7e9ff}
+.audio{display:grid;gap:8px;margin-top:4px}
+.audio input[type=range]{width:100%}
 .levels{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .pill{display:flex;align-items:center;gap:8px;background:#0f1d35;border:1px solid #243a69;border-radius:999px;padding:6px 10px;font-size:12px}
 .dot{width:14px;height:14px;border-radius:50%}
