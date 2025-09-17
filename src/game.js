@@ -28,6 +28,8 @@ const LEVELS = [
 
 // 出現確率（序盤は低レベルが多め）
 function rollLevel() {
+  // ボーナスタイム中は常に「ぶり」（level 5）
+  if (bonusActive) return 5;
   const bag = [0,0,0, 1,1, 2]; // 低レベル寄り
   return bag[Math.floor(Math.random()*bag.length)];
 }
@@ -47,6 +49,9 @@ const world = {
 
 let balls = [];
 let score = 0;
+// ぶりおこしボーナス
+let bonusActive = false;
+let bonusUntil = 0;
 let nextLevel = rollLevel();
 let current = null; // まだ落としていないボール
 let gameOver = false;
@@ -277,7 +282,7 @@ function renderNext() {
     nextBox.insertBefore(dot, nextBox.firstChild);
   };
   const label = document.createElement('span');
-  label.textContent = lv.name;
+  label.textContent = lv.name + (bonusActive? '（ぶりおこし中）':'');
   nextBox.appendChild(img);
   nextBox.appendChild(label);
 }
@@ -313,6 +318,9 @@ function dropHeld() {
   balls.push(current);
   lastDroppedBall = current;
   lastDropTime = performance.now();
+  // 次の予告を更新（ボーナス中はぶり）
+  nextLevel = rollLevel();
+  renderNext();
   current = null;
 }
 
@@ -509,6 +517,7 @@ function tick(now){
           score += LEVELS[a.level].score + (extra.bonus||0);
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
+          maybeStartBuriOkoshi(now, nx, ny);
           break outer;
         }
         // 5: ぶり → 6: 刺身
@@ -525,6 +534,7 @@ function tick(now){
           score += LEVELS[a.level].score + (extra.bonus||0);
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
+          maybeStartBuriOkoshi(now, nx, ny);
           break outer;
         }
         // 6〜8: 刺身→寿司→ぶり大根→鰤しゃぶ
@@ -538,6 +548,7 @@ function tick(now){
           score += LEVELS[a.level].score + (extra.bonus||0);
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
+          maybeStartBuriOkoshi(now, nx, ny);
           break outer;
         }
         // 9: 鰤しゃぶ → 合体で消滅（ボーナス）
@@ -565,6 +576,12 @@ function tick(now){
     }
   } else {
     tick._overTopStart = null;
+  }
+
+  // ボーナス終了チェック
+  if (bonusActive && now > bonusUntil){
+    bonusActive = false;
+    showBurst('ぶりおこし 終了', (world.left+world.right)/2, world.top+40, 'small');
   }
 
   draw();
@@ -617,6 +634,17 @@ function draw(){
 
   // ボール
   for (const b of balls) drawBall(b);
+
+  // ボーナスタイム帯（上部リボン）
+  if (bonusActive){
+    const tLeft = Math.max(0, Math.ceil((bonusUntil - performance.now())/1000));
+    ctx.fillStyle = 'rgba(255,215,0,0.12)';
+    ctx.fillRect(world.left, world.top-58, world.right-world.left, 42);
+    ctx.fillStyle = '#ffe066';
+    ctx.font = 'bold 20px system-ui, -apple-system';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`ぶりおこし中！ 残り ${tLeft} 秒`, (world.left+world.right)/2, world.top-37);
+  }
 
   ctx.restore();
 }
@@ -733,6 +761,24 @@ function applyMixingBonus(x,y, level, nextLevel, now){
   // 新しい玉に上向きのちょいブースト
   res.vyBoost = -1.5;
   return res;
+}
+
+// ぶりおこし（一定時間ぶりのみ出現）
+function startBuriOkoshi(now, x, y){
+  if (bonusActive) return;
+  bonusActive = true;
+  bonusUntil = now + 12000; // 12秒
+  playFestivalBig();
+  showBurst('ぶりおこし', x, y-28, 'big');
+  // 予告を即時ぶりに
+  nextLevel = 5; renderNext();
+}
+function maybeStartBuriOkoshi(now, x, y){
+  if (bonusActive) return;
+  // 合体時にランダムで発生（確率 7%）
+  if (Math.random() < 0.07){
+    startBuriOkoshi(now, x, y);
+  }
 }
 
 function shade(hex, lum){
