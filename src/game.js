@@ -422,6 +422,8 @@ function tick(now){
           const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
           // 効果音
           playFestivalShort();
+          // 合体後のアイテム名を表示
+          showBurst(LEVELS[nl].name, nx, ny-20, 'small');
           score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
@@ -433,7 +435,9 @@ function tick(now){
           const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
           // 効果音（寒ブリ祭り！／煌）
           playFestivalBig();
-          showBurst(Math.random()<0.5 ? '寒ブリ祭り！' : '煌', nx, ny-20, Math.random()<0.5 ? 'big' : 'kira');
+          showBurst(Math.random()<0.5 ? '寒ブリ祭り！' : '煌', nx, ny-28, Math.random()<0.5 ? 'big' : 'kira');
+          // 合体後のアイテム名も表示
+          showBurst(LEVELS[nl].name, nx, ny+6, 'small');
           score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
@@ -444,6 +448,7 @@ function tick(now){
           const nl = a.level + 1;
           const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
           playFestivalShort();
+          showBurst(LEVELS[nl].name, nx, ny-20, 'small');
           score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
