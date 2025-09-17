@@ -28,7 +28,7 @@ const LEVELS = [
 
 // 出現確率（序盤は低レベルが多め）
 function rollLevel() {
-  // ボーナスタイム中は常に「ぶり」（level 5）
+  // ぶりおこし中は常に「ぶり」（level 5）
   if (bonusActive) return 5;
   const bag = [0,0,0, 1,1, 2]; // 低レベル寄り
   return bag[Math.floor(Math.random()*bag.length)];
@@ -52,6 +52,9 @@ let score = 0;
 // ぶりおこしボーナス
 let bonusActive = false;
 let bonusUntil = 0;
+// 海流タイム（対馬 or リマン）
+let currentActive = 'none'; // 'tsushima' | 'liman' | 'none'
+let currentUntil = 0;
 let nextLevel = rollLevel();
 let current = null; // まだ落としていないボール
 let gameOver = false;
@@ -443,8 +446,7 @@ let last = performance.now();
 function tick(now){
   const dt = Math.min(33, now-last); // ms（未使用でも将来のため残す）
   last = now;
-  // 合成流（対馬×リマン＋渦）
-  const flow = (x,y)=> oceanFlow(now,x,y);
+  // 合成流（対馬×リマン＋渦）可視化用。物理への適用は海流タイム時のみ。
 
   // 保持中のボールを左右移動
   if (current){
@@ -464,10 +466,12 @@ function tick(now){
     // 抵抗
     b.vx *= world.air;
     b.vy *= world.air;
-    // 海流の影響（位置に応じて微加速）
-    const f = flow(b.x, b.y);
-    b.vx += f.ax;
-    b.vy += f.ay;
+    // 海流タイム時のみ一方向への流れを適用
+    if (currentActive !== 'none'){
+      const dir = currentActive === 'tsushima' ? 1 : -1; // 対馬=右へ、リマン=左へ
+      const strength = 0.065; // 流れの強さ
+      b.vx += dir * strength;
+    }
     // 位置更新
     b.x += b.vx;
     b.y += b.vy;
@@ -506,49 +510,46 @@ function tick(now){
         const nx=(a.x+b.x)/2, ny=(a.y+b.y)/2;
         // 0〜4: 通常の出世
         if (a.level < 5){
-          let nl = a.level+1;
-          let extra = applyMixingBonus(nx, ny, a.level, nl, now);
-          nl = extra.level;
-          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6 + (extra.vyBoost||0), r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          const nl = a.level+1;
+          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
           // 効果音
           playFestivalShort();
           // 合体後のアイテム名を表示
           showBurst(LEVELS[nl].name, nx, ny-20, 'small');
-          score += LEVELS[a.level].score + (extra.bonus||0);
+          score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
           maybeStartBuriOkoshi(now, nx, ny);
+          maybeStartCurrentTime(now, nx, ny);
           break outer;
         }
         // 5: ぶり → 6: 刺身
         if (a.level === 5){
-          let nl = 6;
-          let extra = applyMixingBonus(nx, ny, a.level, nl, now);
-          nl = extra.level; // ぶりは固定で6だが、ボーナスだけ適用
-          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6 + (extra.vyBoost||0), r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          const nl = 6;
+          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
           // 効果音（寒ブリ祭り！／煌）
           playFestivalBig();
           showBurst(Math.random()<0.5 ? '寒ブリ祭り！' : '煌', nx, ny-28, Math.random()<0.5 ? 'big' : 'kira');
           // 合体後のアイテム名も表示
           showBurst(LEVELS[nl].name, nx, ny+6, 'small');
-          score += LEVELS[a.level].score + (extra.bonus||0);
+          score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
           maybeStartBuriOkoshi(now, nx, ny);
+          maybeStartCurrentTime(now, nx, ny);
           break outer;
         }
         // 6〜8: 刺身→寿司→ぶり大根→鰤しゃぶ
         if (a.level >= 6 && a.level <= 8){
-          let nl = a.level + 1;
-          let extra = applyMixingBonus(nx, ny, a.level, nl, now);
-          nl = extra.level;
-          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6 + (extra.vyBoost||0), r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          const nl = a.level + 1;
+          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
           playFestivalShort();
           showBurst(LEVELS[nl].name, nx, ny-20, 'small');
-          score += LEVELS[a.level].score + (extra.bonus||0);
+          score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
           maybeStartBuriOkoshi(now, nx, ny);
+          maybeStartCurrentTime(now, nx, ny);
           break outer;
         }
         // 9: 鰤しゃぶ → 合体で消滅（ボーナス）
@@ -582,6 +583,10 @@ function tick(now){
   if (bonusActive && now > bonusUntil){
     bonusActive = false;
     showBurst('ぶりおこし 終了', (world.left+world.right)/2, world.top+40, 'small');
+  }
+  if (currentActive !== 'none' && now > currentUntil){
+    const ended = currentActive; currentActive = 'none';
+    showBurst(`${ended==='tsushima'?'対馬海流':'リマン海流'}タイム 終了`, (world.left+world.right)/2, world.top+60, 'small');
   }
 
   draw();
@@ -644,6 +649,17 @@ function draw(){
     ctx.font = 'bold 20px system-ui, -apple-system';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(`ぶりおこし中！ 残り ${tLeft} 秒`, (world.left+world.right)/2, world.top-37);
+  }
+  // 海流タイム帯（上部リボン）
+  if (currentActive !== 'none'){
+    const tLeft = Math.max(0, Math.ceil((currentUntil - performance.now())/1000));
+    const warm = currentActive==='tsushima';
+    ctx.fillStyle = warm ? 'rgba(255,160,120,0.12)' : 'rgba(120,180,255,0.12)';
+    ctx.fillRect(world.left, world.top-16, world.right-world.left, 26);
+    ctx.fillStyle = warm ? '#ffb3a1' : '#9fd0ff';
+    ctx.font = 'bold 16px system-ui, -apple-system';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`${warm?'対馬海流':'リマン海流'}タイム 残り ${tLeft} 秒`, (world.left+world.right)/2, world.top-3);
   }
 
   ctx.restore();
@@ -739,29 +755,7 @@ function drawBall(b){
   ctx.restore();
 }
 
-// 潮目（対馬×リマンの合流域）ボーナス
-function isInMixZone(x,y, now){
-  const bandW = 140 + 40*Math.sin(now/5000); // 緩やかに幅変化
-  const cx = (world.left+world.right)/2;
-  return Math.abs(x - cx) < bandW/2 && y > world.top+80 && y < world.bottom-160;
-}
-function applyMixingBonus(x,y, level, nextLevel, now){
-  let res = { level: nextLevel, bonus: 0, vyBoost: 0 };
-  if (!isInMixZone(x,y, now)) return res;
-  // 潮目ボーナス表示
-  showBurst('潮目ボーナス', x, y-34, 'small');
-  smallBell((ensureAudio()||{currentTime:0}).currentTime||0);
-  // 追加スコア
-  res.bonus = Math.round(LEVELS[level].score * 0.5);
-  // 低レベル帯はまれに+2段階成長
-  if (level <= 4 && Math.random() < 0.15){
-    res.level = Math.min(nextLevel+1, LEVELS.length-1);
-    showBurst('暖流に乗った！', x, y-56, 'small');
-  }
-  // 新しい玉に上向きのちょいブースト
-  res.vyBoost = -1.5;
-  return res;
-}
+// 潮目ボーナス（廃止）
 
 // ぶりおこし（一定時間ぶりのみ出現）
 function startBuriOkoshi(now, x, y){
@@ -775,9 +769,29 @@ function startBuriOkoshi(now, x, y){
 }
 function maybeStartBuriOkoshi(now, x, y){
   if (bonusActive) return;
-  // 合体時にランダムで発生（確率 7%）
-  if (Math.random() < 0.07){
+  // 合体時にランダムで発生（確率 3% に調整）
+  if (Math.random() < 0.03){
     startBuriOkoshi(now, x, y);
+  }
+}
+
+// 海流タイム（対馬 or リマン）
+function startCurrentTime(now, mode, x, y){
+  if (currentActive !== 'none') return;
+  currentActive = mode; // 'tsushima' or 'liman'
+  currentUntil = now + 9000; // 9秒
+  if (mode==='tsushima'){
+    showBurst('対馬海流', x, y-28, 'big');
+  } else {
+    showBurst('リマン海流', x, y-28, 'big');
+  }
+}
+function maybeStartCurrentTime(now, x, y){
+  if (currentActive !== 'none') return;
+  // 合体時にランダムで発生（確率 5%）
+  if (Math.random() < 0.05){
+    const mode = Math.random()<0.5 ? 'tsushima' : 'liman';
+    startCurrentTime(now, mode, x, y);
   }
 }
 
