@@ -397,10 +397,7 @@ function tick(now){
         b.vx *= world.friction;
       }
     }
-    // 上に突き抜けたら終了条件チェック
-    if (b.y - b.r < world.top - 8){
-      triggerGameOver();
-    }
+    // 終了条件チェックはループ後にまとめて行う
   }
 
   // 円同士の衝突解決 & マージ
@@ -462,6 +459,21 @@ function tick(now){
         }
       }
     }
+  }
+
+  // 終了条件チェック（持続的に上端を越えた場合のみ）
+  let anyOver = false;
+  for (const b of balls){
+    if (b.y - b.r < world.top - 8){ anyOver = true; break; }
+  }
+  if (anyOver){
+    if (!tick._overTopStart) tick._overTopStart = now;
+    // 0.8秒以上継続でゲームオーバー
+    if (now - tick._overTopStart > 800){
+      triggerGameOver();
+    }
+  } else {
+    tick._overTopStart = null;
   }
 
   draw();
