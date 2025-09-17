@@ -326,10 +326,24 @@ function resolveCircle(a,b){
     const relVy = b.vy - a.vy;
     const vn = relVx*nx + relVy*ny;
     if (vn<0){
-      const imp = -(1+world.bounce)*vn/(1/m1+1/m2);
+      const vnAbs = Math.abs(vn);
+      const e = (vnAbs < 0.6) ? 0.0 : world.bounce; // 低速時は無反発
+      const imp = -(1+e)*vn/(1/m1+1/m2);
       const ix = imp*nx, iy = imp*ny;
       a.vx -= ix/m1; a.vy -= iy/m1;
       b.vx += ix/m2; b.vy += iy/m2;
+      // 低速接触時の接線減衰で振動を抑える
+      if (vnAbs < 0.6){
+        const tx = -ny, ty = nx;
+        const vt = relVx*tx + relVy*ty;
+        const mu = 0.02;
+        const jft = -vt*mu/(1/m1+1/m2);
+        a.vx -= jft*tx/m1; a.vy -= jft*ty/m1;
+        b.vx += jft*tx/m2; b.vy += jft*ty/m2;
+      }
+      // ごく小さい速度はゼロ止め
+      if (Math.abs(a.vx)<0.02) a.vx=0; if (Math.abs(a.vy)<0.02) a.vy=0;
+      if (Math.abs(b.vx)<0.02) b.vx=0; if (Math.abs(b.vy)<0.02) b.vy=0;
       // ぶつかり音（スパム防止の簡易スロットル）
       const nowMs = performance.now();
       const speed = Math.min(1.0, (-vn)/8); // 当たり強度
@@ -373,7 +387,16 @@ function tick(now){
     // 壁との衝突（バブル半径で判定）
     if (b.x - b.r < world.left){ b.x = world.left + b.r; b.vx = -b.vx * world.bounce; }
     if (b.x + b.r > world.right){ b.x = world.right - b.r; b.vx = -b.vx * world.bounce; }
-    if (b.y + b.r > world.bottom){ b.y = world.bottom - b.r; b.vy = -Math.abs(b.vy) * world.bounce; b.vx *= world.friction; }
+    if (b.y + b.r > world.bottom){
+      b.y = world.bottom - b.r;
+      if (Math.abs(b.vy) < 0.9){
+        b.vy = 0;
+        b.vx *= 0.96;
+      } else {
+        b.vy = -Math.abs(b.vy) * world.bounce;
+        b.vx *= world.friction;
+      }
+    }
     // 上に突き抜けたら終了条件チェック
     if (b.y - b.r < world.top - 8){
       triggerGameOver();
@@ -464,10 +487,11 @@ function draw(){
   ctx.closePath();
   ctx.stroke();
 
-  // 海中の泡っぽい粒子（軽い装飾）
+  // 海中の泡（下から上へ）
   for (let i=0;i<16;i++){
     const x = world.left + ((i*137)% (world.right-world.left));
-    const y = (performance.now()/30 + i*60) % (world.bottom-world.top) + world.top;
+    const span = (world.bottom - world.top);
+    const y = world.bottom - ((performance.now()/30 + i*60) % span);
     ctx.globalAlpha = 0.06;
     ctx.beginPath(); ctx.arc(x,y, 8 + (i%3)*3, 0, Math.PI*2); ctx.fillStyle = '#9bd1ff'; ctx.fill();
     ctx.globalAlpha = 1;
