@@ -26,6 +26,14 @@
 	@media (max-width: 900px){
 	  .wrap{grid-template-columns:1fr}
 	}
+	.stage{position:relative}
+	.fx{position:absolute;inset:0;pointer-events:none}
+	.burst{position:absolute;color:#fff;font-weight:900;letter-spacing:.05em;text-shadow:0 4px 18px rgba(0,0,0,.55), 0 0 10px rgba(255,255,255,.15)}
+	.burst.big{font-size:56px}
+	.burst.small{font-size:28px}
+	.burst.kira{font-size:84px}
+	@keyframes pop{0%{transform:translate(-50%,-50%) scale(.7);opacity:0} 15%{opacity:1} 60%{transform:translate(-50%,-50%) scale(1.05)} 100%{transform:translate(-50%,-50%) scale(1);opacity:0}}
+	.burst.anim{animation:pop 900ms ease-out forwards}
 	.controls{display:grid;gap:8px;margin-top:8px}
 	.controls button{background:var(--accent);color:#052a2a;border:none;border-radius:12px;padding:10px 12px;font-weight:700;cursor:pointer}
 	.controls button.secondary{background:#203456;color:#d7e9ff}
@@ -68,8 +76,9 @@
 	  </div>
 	</div>
 
-	<div>
+	<div class="stage">
 	  <canvas id="game" width="720" height="960" aria-label="ゲームフィールド"></canvas>
+	  <div id="fx" class="fx" aria-hidden="true"></div>
 	</div>
   </div>
 
@@ -141,6 +150,78 @@
   const uiScore = document.getElementById('score');
   const nextBox = document.getElementById('nextBox');
   const legendBox = document.getElementById('legend');
+  const fxLayer = document.getElementById('fx');
+  const stageEl = document.querySelector('.stage');
+
+  // 効果音＆演出
+  let audioEnabled = true;
+  let audioCtx = null;
+  function ensureAudio(){
+    if (!audioEnabled) return null;
+    if (audioCtx) return audioCtx;
+    try{
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }catch(e){ audioCtx = null; }
+    return audioCtx;
+  }
+  // シンプル太鼓ヒット
+  function taiko(time, freq=110, dur=0.25){
+    const ctx = ensureAudio(); if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filt = ctx.createBiquadFilter();
+    filt.type='lowpass'; filt.frequency.value = 800;
+    osc.type='sine'; osc.frequency.setValueAtTime(freq, time);
+    osc.frequency.exponentialRampToValueAtTime(freq*0.6, time+dur*0.8);
+    gain.gain.setValueAtTime(0.001, time);
+    gain.gain.exponentialRampToValueAtTime(0.8, time+0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, time+dur);
+    osc.connect(filt).connect(gain).connect(ctx.destination);
+    osc.start(time); osc.stop(time+dur+0.02);
+  }
+  function smallBell(time){
+    const ctx = ensureAudio(); if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type='triangle'; osc.frequency.setValueAtTime(880, time);
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(0.4, time+0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time+0.2);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(time); osc.stop(time+0.25);
+  }
+  function playFestivalShort(){
+    const ctx = ensureAudio(); if (!ctx) return;
+    const t = ctx.currentTime + 0.01;
+    taiko(t, 120); taiko(t+0.12, 95);
+  }
+  function playFestivalBig(){
+    const ctx = ensureAudio(); if (!ctx) return;
+    const t = ctx.currentTime + 0.01;
+    taiko(t, 140); taiko(t+0.14, 100); taiko(t+0.28, 140); taiko(t+0.42, 85);
+    smallBell(t+0.5);
+  }
+  function speak(text){
+    if (!audioEnabled) return;
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ja-JP';
+    u.rate = 1.05; u.pitch = 1.0; u.volume = 1.0;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  }
+  function showBurst(text, x, y, kind='small'){
+    const rect = canvas.getBoundingClientRect();
+    const stageRect = stageEl.getBoundingClientRect();
+    const scale = rect.width / canvas.width;
+    const el = document.createElement('div');
+    el.className = `burst ${kind} anim`;
+    el.textContent = text;
+    el.style.left = (x*scale + rect.left - stageRect.left) + 'px';
+    el.style.top  = (y*scale + rect.top  - stageRect.top)  + 'px';
+    fxLayer.appendChild(el);
+    setTimeout(()=>{ el.remove(); }, 950);
+  }
 
   // レジェンド描画（画像が無ければ色ドットにフォールバック）
   LEVELS.forEach((lv,i)=>{
@@ -215,6 +296,7 @@
 	if (e.code==='ArrowRight'|| e.code==='KeyD') KEYS.right=true;
 	if (e.code==='Space') dropHeld();
 	if (e.code==='KeyR') hardReset();
+    ensureAudio();
   });
   window.addEventListener('keyup', e=>{
 	if (e.code==='ArrowLeft' || e.code==='KeyA') KEYS.left=false;
@@ -236,6 +318,7 @@
   }
   canvas.addEventListener('pointerdown', (e)=>{
     e.preventDefault();
+    ensureAudio();
     pointerActive = true;
     setCurrentXFromClientX(e.clientX);
   });
@@ -348,6 +431,9 @@
         if (a.level < 5){
           const nl = a.level+1;
           const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          // 演出・SE
+          speak('ほいやさ！');
+          playFestivalShort();
           score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
@@ -357,6 +443,10 @@
         if (a.level === 5){
           const nl = 6;
           const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          // 演出・SE（寒ブリ祭り！／煌）
+          speak('ほいやさ！');
+          playFestivalBig();
+          showBurst(Math.random()<0.5 ? '寒ブリ祭り！' : '煌', nx, ny-20, Math.random()<0.5 ? 'big' : 'kira');
           score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
@@ -366,6 +456,8 @@
         if (a.level >= 6 && a.level <= 8){
           const nl = a.level + 1;
           const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          speak('ほいやさ！');
+          playFestivalShort();
           score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
@@ -373,6 +465,9 @@
         }
         // 9: 鰤しゃぶ → 合体で消滅（ボーナス）
         if (a.level === 9){
+          speak('ほいやさ！');
+          playFestivalBig();
+          showBurst('煌', nx, ny-20, 'kira');
           balls.splice(j,1); balls.splice(i,1);
           score += LEVELS[a.level].score;
           break outer;
