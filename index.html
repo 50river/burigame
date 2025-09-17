@@ -117,22 +117,46 @@
       }
       const d = imgd.data;
       const mask = new Uint8Array(s * s);
-      const TH = 32; // アルファ閾値（0-255）
+      const TH = 8; // アルファ閾値（0-255）やや低めにして縁のアンチエイリアスも拾う
+      let minX=s, minY=s, maxX=-1, maxY=-1, any=false;
       for (let p=0,q=3;p<mask.length;p++,q+=4){
-        mask[p] = d[q] > TH ? 1 : 0;
+        const opaque = d[q] > TH ? 1 : 0;
+        mask[p] = opaque;
+        if (opaque){
+          any = true;
+          const y = Math.floor(p / s);
+          const x = p - y * s;
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
       }
-      MASKS[i] = { w:s, h:s, data:mask };
+      let collideR = LEVELS[i].r * 0.85; // 物理は少し小さめに
+      if (any){
+        const w = Math.max(1, maxX - minX + 1);
+        const h = Math.max(1, maxY - minY + 1);
+        collideR = Math.max(w, h) / 2;
+        collideR = Math.max(8, collideR - 2); // わずかに緩める
+      }
+      MASKS[i] = { w:s, h:s, data:mask, collideR };
     }
+  }
+
+  function physRFor(level){
+    const m = MASKS[level];
+    if (m && m.collideR) return m.collideR;
+    return LEVELS[level].r * 0.85;
   }
 
   // 2つのボールについて、画像の不透明ピクセル同士が重なっているか判定
   function pixelOverlap(a,b){
     const ma = MASKS[a.level], mb = MASKS[b.level];
     if (!ma || !mb) return false;
-    const ax0 = Math.round(a.x - LEVELS[a.level].r);
-    const ay0 = Math.round(a.y - LEVELS[a.level].r);
-    const bx0 = Math.round(b.x - LEVELS[b.level].r);
-    const by0 = Math.round(b.y - LEVELS[b.level].r);
+    const ax0 = Math.floor(a.x - LEVELS[a.level].r);
+    const ay0 = Math.floor(a.y - LEVELS[a.level].r);
+    const bx0 = Math.floor(b.x - LEVELS[b.level].r);
+    const by0 = Math.floor(b.y - LEVELS[b.level].r);
     const left   = Math.max(ax0, bx0);
     const top    = Math.max(ay0, by0);
     const right  = Math.min(ax0 + ma.w, bx0 + mb.w);
@@ -259,23 +283,25 @@
   }
   // 少し離れていても「触れた」とみなす緩和判定（合体を確実化）
   function closeEnough(a,b){
-	const dx=b.x-a.x, dy=b.y-a.y; const d=Math.hypot(dx,dy);
-	return d <= a.r + b.r + 0.8; // 0.8px のマージン
+    const dx=b.x-a.x, dy=b.y-a.y; const d=Math.hypot(dx,dy);
+    const pr = physRFor(a.level) + physRFor(b.level);
+    return d <= pr + 0.8; // 0.8px のマージン
   }
 
   function resolveCircle(a,b){
-	const dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy);
-	if (d===0) { d=0.01; }
-	const overlap = a.r + b.r - d;
-	if (overlap>0){
-	  const nx = dx/d, ny = dy/d;
-	  // 位置を押し出す
-	  const m1 = a.r, m2 = b.r; // 簡易質量
-	  const total = m1+m2;
-	  a.x -= nx * overlap * (m2/total);
-	  a.y -= ny * overlap * (m2/total);
-	  b.x += nx * overlap * (m1/total);
-	  b.y += ny * overlap * (m1/total);
+    const dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy);
+    if (d===0) { d=0.01; }
+    const ra = physRFor(a.level), rb = physRFor(b.level);
+    const overlap = ra + rb - d;
+    if (overlap>0){
+      const nx = dx/d, ny = dy/d;
+      // 位置を押し出す
+      const m1 = a.r, m2 = b.r; // 簡易質量は見た目サイズベースのまま
+      const total = m1+m2;
+      a.x -= nx * overlap * (m2/total);
+      a.y -= ny * overlap * (m2/total);
+      b.x += nx * overlap * (m1/total);
+      b.y += ny * overlap * (m1/total);
 	  // 反発（簡易）
 	  const relVx = b.vx - a.vx;
 	  const relVy = b.vy - a.vy;
@@ -298,20 +324,21 @@
 	last = now;
 
 	// 保持中のボールを左右移動
-	if (current){
-	  const speed = 6;
-	  if (KEYS.left) current.x -= speed;
-	  if (KEYS.right) current.x += speed;
-	  current.x = clamp(current.x, world.left+current.r, world.right-current.r);
-	} else if (!gameOver) {
+  if (current){
+      const speed = 6;
+      if (KEYS.left) current.x -= speed;
+      if (KEYS.right) current.x += speed;
+      const pr = physRFor(current.level);
+      current.x = clamp(current.x, world.left+pr, world.right-pr);
+  } else if (!gameOver) {
 	  // 新しいボールを供給
 	  spawnHeld();
 	}
 
 	// 物理更新
-	for (const b of balls){
-	  // 重力
-	  b.vy += world.gravity;
+  for (const b of balls){
+    // 重力
+    b.vy += world.gravity;
 	  // 抵抗
 	  b.vx *= world.air;
 	  b.vy *= world.air;
@@ -319,15 +346,16 @@
 	  b.x += b.vx;
 	  b.y += b.vy;
 
-	  // 壁との衝突
-	  if (b.x - b.r < world.left){ b.x = world.left + b.r; b.vx = -b.vx * world.bounce; }
-	  if (b.x + b.r > world.right){ b.x = world.right - b.r; b.vx = -b.vx * world.bounce; }
-	  if (b.y + b.r > world.bottom){ b.y = world.bottom - b.r; b.vy = -Math.abs(b.vy) * world.bounce; b.vx *= world.friction; }
-	  // 上に突き抜けたら終了条件チェック
-	  if (b.y - b.r < world.top - 8){
-		triggerGameOver();
-	  }
-	}
+    // 壁との衝突（物理半径で判定）
+    const pr = physRFor(b.level);
+    if (b.x - pr < world.left){ b.x = world.left + pr; b.vx = -b.vx * world.bounce; }
+    if (b.x + pr > world.right){ b.x = world.right - pr; b.vx = -b.vx * world.bounce; }
+    if (b.y + pr > world.bottom){ b.y = world.bottom - pr; b.vy = -Math.abs(b.vy) * world.bounce; b.vx *= world.friction; }
+    // 上に突き抜けたら終了条件チェック
+    if (b.y - pr < world.top - 8){
+      triggerGameOver();
+    }
+  }
 
 	// 円同士の衝突解決 & マージ
 	// 1) 位置解決 + 反発
