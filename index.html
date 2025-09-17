@@ -21,6 +21,11 @@
 	.card{background:#111c33;border:1px solid #23345f;border-radius:12px;padding:10px}
 	.big{font-size:24px;font-weight:700}
 	canvas{background:linear-gradient(180deg,rgba(91,192,190,.08),rgba(91,192,190,.02));display:block;border-radius:16px;border:1px solid #25406b;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+	/* スマホ対応 */
+	canvas{width:100%;height:auto;touch-action:none}
+	@media (max-width: 900px){
+	  .wrap{grid-template-columns:1fr}
+	}
 	.controls{display:grid;gap:8px;margin-top:8px}
 	.controls button{background:var(--accent);color:#052a2a;border:none;border-radius:12px;padding:10px 12px;font-weight:700;cursor:pointer}
 	.controls button.secondary{background:#203456;color:#d7e9ff}
@@ -56,7 +61,7 @@
 	  </div>
 
 	  <div class="controls">
-		<div>操作：<span class="kbd">←</span><span class="kbd">→</span> で位置移動 / <span class="kbd">スペース</span> でドロップ / <span class="kbd">R</span> でリセット</div>
+		<div>操作：PCは <span class="kbd">←</span><span class="kbd">→</span> で移動 / <span class="kbd">スペース</span> でドロップ / <span class="kbd">R</span> でリセット。スマホは「画面ドラッグで移動・離してドロップ」。</div>
 		<button id="dropBtn" class="blink">スペースでドロップ</button>
 		<div class="levels" id="legend"></div>
 		<button id="resetBtn" class="secondary">リセット</button>
@@ -217,6 +222,32 @@
   });
   document.getElementById('dropBtn').onclick = dropHeld;
   document.getElementById('resetBtn').onclick = hardReset;
+
+  // スマホ/タッチ・ポインタ操作
+  let pointerActive = false;
+  function clientToCanvasX(clientX){
+    const rect = canvas.getBoundingClientRect();
+    return (clientX - rect.left) * (canvas.width / rect.width);
+  }
+  function setCurrentXFromClientX(clientX){
+    if (!current) return;
+    const x = clientToCanvasX(clientX);
+    current.x = clamp(x, world.left+current.r, world.right-current.r);
+  }
+  canvas.addEventListener('pointerdown', (e)=>{
+    e.preventDefault();
+    pointerActive = true;
+    setCurrentXFromClientX(e.clientX);
+  });
+  canvas.addEventListener('pointermove', (e)=>{
+    if (!pointerActive) return;
+    setCurrentXFromClientX(e.clientX);
+  });
+  canvas.addEventListener('pointerup', (e)=>{
+    if (!pointerActive) return;
+    pointerActive = false;
+    dropHeld();
+  });
 
   // ========== ユーティリティ ==========
   function circleOverlap(a,b){
