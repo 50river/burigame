@@ -612,11 +612,21 @@ function draw(){
   ctx.closePath();
   ctx.stroke();
 
-  // 海中の泡（下から上へ）
+  // 海中の泡（下から上へ）。海流タイム中は流れ方向にドリフト。
   for (let i=0;i<16;i++){
-    const x = world.left + ((i*137)% (world.right-world.left));
     const span = (world.bottom - world.top);
-    const y = world.bottom - ((performance.now()/30 + i*60) % span);
+    const t = performance.now();
+    const up = (t/30 + i*60) % span; // 下→上への進行量
+    let y = world.bottom - up;
+    let x = world.left + ((i*137)% (world.right-world.left));
+    if (currentActive !== 'none'){
+      const dir = currentActive==='tsushima' ? 1 : -1; // tsushima: →, liman: ←
+      const drift = up * 0.08; // 斜め流れの強さ
+      x += dir * drift;
+      // 境界内にクランプ
+      if (x < world.left) x = world.left + 6;
+      if (x > world.right) x = world.right - 6;
+    }
     ctx.globalAlpha = 0.06;
     ctx.beginPath(); ctx.arc(x,y, 8 + (i%3)*3, 0, Math.PI*2); ctx.fillStyle = '#9bd1ff'; ctx.fill();
     ctx.globalAlpha = 1;
