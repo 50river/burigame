@@ -27,7 +27,7 @@
 	.levels{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 	.pill{display:flex;align-items:center;gap:8px;background:#0f1d35;border:1px solid #243a69;border-radius:999px;padding:6px 10px;font-size:12px}
 	.dot{width:14px;height:14px;border-radius:50%}
-	.thumb{width:24px;height:24px;border-radius:6px;object-fit:contain;background:#0b132b;border:1px solid #223c6a}
+	.thumb{width:24px;height:24px;border-radius:50%;object-fit:cover;background:#0b132b;border:1px solid #223c6a}
 	.kbd{display:inline-block;background:#0e1a31;border:1px solid #284776;padding:2px 6px;border-radius:6px;font-weight:700}
 	.gameover{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(7,13,26,.75);backdrop-filter: blur(4px);}
 	.dialog{background:var(--panel);border:1px solid #2c4276;border-radius:16px;max-width:520px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
@@ -94,87 +94,6 @@
     );
   }
 
-  // 画像の不透明マスクをレベルごと（描画サイズ）に生成
-  // マスクは Uint8Array (0 or 1) で保持
-  const MASKS = new Array(8);
-  function buildMasks(){
-    for (let i=0;i<8;i++){
-      const img = IMAGES[i];
-      if (!img){ MASKS[i] = null; continue; }
-      const s = Math.round(LEVELS[i].r * 2);
-      const off = document.createElement('canvas');
-      off.width = s; off.height = s;
-      const octx = off.getContext('2d');
-      octx.clearRect(0,0,s,s);
-      octx.drawImage(img, 0, 0, s, s);
-      let imgd;
-      try {
-        imgd = octx.getImageData(0,0,s,s);
-      } catch (e) {
-        // file:// や CORS で読めない場合はマスク生成をスキップ
-        MASKS[i] = null;
-        continue;
-      }
-      const d = imgd.data;
-      const mask = new Uint8Array(s * s);
-      const TH = 8; // アルファ閾値（0-255）やや低めにして縁のアンチエイリアスも拾う
-      let minX=s, minY=s, maxX=-1, maxY=-1, any=false;
-      for (let p=0,q=3;p<mask.length;p++,q+=4){
-        const opaque = d[q] > TH ? 1 : 0;
-        mask[p] = opaque;
-        if (opaque){
-          any = true;
-          const y = Math.floor(p / s);
-          const x = p - y * s;
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
-        }
-      }
-      let collideR = LEVELS[i].r * 0.85; // 物理は少し小さめに
-      if (any){
-        const w = Math.max(1, maxX - minX + 1);
-        const h = Math.max(1, maxY - minY + 1);
-        collideR = Math.max(w, h) / 2;
-        collideR = Math.max(8, collideR - 2); // わずかに緩める
-      }
-      MASKS[i] = { w:s, h:s, data:mask, collideR };
-    }
-  }
-
-  function physRFor(level){
-    const m = MASKS[level];
-    if (m && m.collideR) return m.collideR;
-    return LEVELS[level].r * 0.85;
-  }
-
-  // 2つのボールについて、画像の不透明ピクセル同士が重なっているか判定
-  function pixelOverlap(a,b){
-    const ma = MASKS[a.level], mb = MASKS[b.level];
-    if (!ma || !mb) return false;
-    const ax0 = Math.floor(a.x - LEVELS[a.level].r);
-    const ay0 = Math.floor(a.y - LEVELS[a.level].r);
-    const bx0 = Math.floor(b.x - LEVELS[b.level].r);
-    const by0 = Math.floor(b.y - LEVELS[b.level].r);
-    const left   = Math.max(ax0, bx0);
-    const top    = Math.max(ay0, by0);
-    const right  = Math.min(ax0 + ma.w, bx0 + mb.w);
-    const bottom = Math.min(ay0 + ma.h, by0 + mb.h);
-    if (left >= right || top >= bottom) return false;
-    // 画素ステップ（1で完全、2で高速）
-    const STEP = 1;
-    for (let y=top; y<bottom; y+=STEP){
-      const ay = y - ay0; const by = y - by0;
-      for (let x=left; x<right; x+=STEP){
-        const ax = x - ax0; const bx = x - bx0;
-        if (ma.data[ay*ma.w + ax] & mb.data[by*mb.w + bx]){
-          return true;
-        }
-      }
-    }
-    return false;
-  }
   // ========== ゲーム定義 ==========
   const LEVELS = [
 	{ name: '魚卵', color: '#f8d568', r: 24, score: 1 },
@@ -284,15 +203,13 @@
   // 少し離れていても「触れた」とみなす緩和判定（合体を確実化）
   function closeEnough(a,b){
     const dx=b.x-a.x, dy=b.y-a.y; const d=Math.hypot(dx,dy);
-    const pr = physRFor(a.level) + physRFor(b.level);
-    return d <= pr + 0.8; // 0.8px のマージン
+    return d <= a.r + b.r + 0.8; // 0.8px のマージン
   }
 
   function resolveCircle(a,b){
     const dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy);
     if (d===0) { d=0.01; }
-    const ra = physRFor(a.level), rb = physRFor(b.level);
-    const overlap = ra + rb - d;
+    const overlap = a.r + b.r - d;
     if (overlap>0){
       const nx = dx/d, ny = dy/d;
       // 位置を押し出す
@@ -315,23 +232,7 @@
     }
   }
 
-  // ピクセル重なりが残る場合に、法線方向へ最小移動で分離
-  function resolvePixel(a,b){
-    if (!MASKS[a.level] || !MASKS[b.level]) return; // マスクがなければスキップ
-    if (!pixelOverlap(a,b)) return;
-    let dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy);
-    if (d===0){ dx=1; dy=0; d=1; }
-    const nx = dx/d, ny = dy/d;
-    const m1 = a.r, m2 = b.r; const total=m1+m2;
-    // 最大8ステップ、1pxずつ離す（必要最低限）
-    for (let k=0;k<8;k++){
-      if (!pixelOverlap(a,b)) break;
-      a.x -= nx * (m2/total);
-      a.y -= ny * (m2/total);
-      b.x += nx * (m1/total);
-      b.y += ny * (m1/total);
-    }
-  }
+  // ピクセル分離・判定は使用しません（バブル円で物理解決）
 
   function clamp(val,min,max){return Math.max(min,Math.min(max,val));}
 
@@ -346,8 +247,7 @@
       const speed = 6;
       if (KEYS.left) current.x -= speed;
       if (KEYS.right) current.x += speed;
-      const pr = physRFor(current.level);
-      current.x = clamp(current.x, world.left+pr, world.right-pr);
+      current.x = clamp(current.x, world.left+current.r, world.right-current.r);
   } else if (!gameOver) {
 	  // 新しいボールを供給
 	  spawnHeld();
@@ -364,33 +264,28 @@
 	  b.x += b.vx;
 	  b.y += b.vy;
 
-    // 壁との衝突（物理半径で判定）
-    const pr = physRFor(b.level);
-    if (b.x - pr < world.left){ b.x = world.left + pr; b.vx = -b.vx * world.bounce; }
-    if (b.x + pr > world.right){ b.x = world.right - pr; b.vx = -b.vx * world.bounce; }
-    if (b.y + pr > world.bottom){ b.y = world.bottom - pr; b.vy = -Math.abs(b.vy) * world.bounce; b.vx *= world.friction; }
+    // 壁との衝突（バブル半径で判定）
+    if (b.x - b.r < world.left){ b.x = world.left + b.r; b.vx = -b.vx * world.bounce; }
+    if (b.x + b.r > world.right){ b.x = world.right - b.r; b.vx = -b.vx * world.bounce; }
+    if (b.y + b.r > world.bottom){ b.y = world.bottom - b.r; b.vy = -Math.abs(b.vy) * world.bounce; b.vx *= world.friction; }
     // 上に突き抜けたら終了条件チェック
-    if (b.y - pr < world.top - 8){
+    if (b.y - b.r < world.top - 8){
       triggerGameOver();
     }
   }
 
 	// 円同士の衝突解決 & マージ
-  // 1) 位置解決 + 反発
+  // 1) 位置解決 + 反発（円ベース）
   for (let i=0;i<balls.length;i++){
     for (let j=i+1;j<balls.length;j++){
       resolveCircle(balls[i], balls[j]);
-      resolvePixel(balls[i], balls[j]);
     }
   }
   // 2) マージ（必ず触れたら合体）
   outer: for (let i=0;i<balls.length;i++){
     for (let j=i+1;j<balls.length;j++){
       const a=balls[i], b=balls[j];
-      if (!closeEnough(a,b)) continue; // 物理半径で粗判定
-      if (MASKS[a.level] && MASKS[b.level]){
-        if (!pixelOverlap(a,b)) continue; // 凹凸を含む見た目シルエットで厳密判定
-      }
+      if (!closeEnough(a,b)) continue; // バブル同士の接触
 
       // (A) 料理×料理 → 消滅（ボーナス）
       if (LEVELS[a.level].isDish && LEVELS[b.level].isDish){
@@ -470,28 +365,46 @@
   }
 
   function drawBall(b){
-	const lv = LEVELS[b.level];
-	const img = IMAGES[b.level];
-	if (img){
-	  const size = b.r * 2;
-	  ctx.save();
-	  ctx.shadowColor = 'rgba(0,0,0,.35)';
-	  ctx.shadowBlur = 10;
-	  ctx.drawImage(img, b.x - b.r, b.y - b.r, size, size);
-	  ctx.restore();
-	} else {
-	  // フォールバック（画像未読み込み時）
-	  const g = ctx.createRadialGradient(b.x-b.r*0.4, b.y-b.r*0.6, b.r*0.2, b.x, b.y, b.r);
-	  g.addColorStop(0, '#ffffff');
-	  g.addColorStop(0.15, lv.color);
-	  g.addColorStop(1, shade(lv.color,-0.35));
-	  ctx.fillStyle = g;
-	  ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
-	  ctx.fillStyle = '#05131e';
-	  ctx.font = `bold ${Math.max(12, Math.min(22, b.r*0.6))}px system-ui, -apple-system, 'Noto Sans JP'`;
-	  ctx.textAlign='center'; ctx.textBaseline='middle';
-	  ctx.fillText(LEVELS[b.level].name, b.x, b.y);
-	}
+    const lv = LEVELS[b.level];
+    const img = IMAGES[b.level];
+    const r = b.r;
+    const size = r * 2;
+
+    // 中身（画像）を円でクリップして描画
+    ctx.save();
+    ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, Math.PI*2); ctx.clip();
+    if (img){
+      ctx.drawImage(img, b.x - r, b.y - r, size, size);
+    } else {
+      // フォールバック（円グラデ）
+      const g = ctx.createRadialGradient(b.x-r*0.4, b.y-r*0.6, r*0.2, b.x, b.y, r);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(0.15, lv.color);
+      g.addColorStop(1, shade(lv.color,-0.35));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(b.x,b.y,r,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+
+    // バブルっぽい縁・ハイライト
+    ctx.save();
+    // 外枠
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(b.x, b.y, r-1, 0, Math.PI*2); ctx.stroke();
+    // 上部ハイライト
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = Math.max(1.5, r*0.06);
+    ctx.arc(b.x - r*0.25, b.y - r*0.35, r*0.7, -Math.PI*0.2, Math.PI*0.5);
+    ctx.stroke();
+    // 右下の薄い反射
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = Math.max(1, r*0.04);
+    ctx.arc(b.x + r*0.25, b.y + r*0.25, r*0.7, Math.PI*0.8, Math.PI*1.2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   function shade(hex, lum){
@@ -532,9 +445,8 @@
 	document.getElementById('gameover').style.display = 'none';
   };
 
-  // 初期化（画像ロード→マスク生成後に開始）
+  // 初期化（画像ロード後に開始）
   preloadImages().then(()=>{
-    buildMasks();
     hardReset();
   });
 
