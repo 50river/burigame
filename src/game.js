@@ -58,6 +58,10 @@ const fxLayer = document.getElementById('fx');
 const stageEl = document.querySelector('.stage');
 const bgmToggleBtn = document.getElementById('bgmToggle');
 const bgmVolumeSlider = document.getElementById('bgmVolume');
+const flowToggleBtn = document.getElementById('flowToggle');
+const flowInfoBtn = document.getElementById('flowInfo');
+const flowInfoOverlay = document.getElementById('flowInfoOverlay');
+const flowCloseBtn = document.getElementById('flowClose');
 
 // 効果音＆演出
 let audioEnabled = true;
@@ -116,6 +120,54 @@ if (bgmVolumeSlider){
   bgmVolumeSlider.value = String(bgmVolumePref);
 }
 updateBgmUi();
+
+// 海流の可視化トグル・解説
+let showCurrents = false;
+if (flowToggleBtn){
+  flowToggleBtn.addEventListener('click', ()=>{
+    showCurrents = !showCurrents;
+    flowToggleBtn.textContent = `海流ガイド: ${showCurrents?'ON':'OFF'}`;
+  });
+}
+if (flowInfoBtn){
+  flowInfoBtn.addEventListener('click', ()=>{
+    flowInfoOverlay.style.display = 'flex';
+  });
+}
+if (flowCloseBtn){
+  flowCloseBtn.addEventListener('click', ()=>{
+    flowInfoOverlay.style.display = 'none';
+  });
+}
+
+// 海流ベクトル場（対馬・リマン・渦）
+function tsushimaFlow(now,x,y){
+  const A1 = 0.018, T1 = 5000, k1 = 0.008;
+  return {
+    ax: A1 * Math.sin((now/T1)*Math.PI*2 + y*k1),
+    ay: -A1*0.35 * Math.cos((now/T1)*Math.PI*2 + x*k1*0.6),
+  };
+}
+function limanFlow(now,x,y){
+  const A2 = 0.012, T2 = 7000, k2 = 0.01;
+  return {
+    ax: -A2 * Math.cos((now/T2)*Math.PI*2 + y*k2*0.8),
+    ay:  A2*0.28 * Math.sin((now/T2)*Math.PI*2 + x*k2),
+  };
+}
+function vortexFlow(now,x,y){
+  const cx = (world.left+world.right)/2, cy=(world.top+world.bottom)/2;
+  const dx = (x-cx)/240, dy=(y-cy)/240;
+  const r2 = dx*dx+dy*dy;
+  const Av = 0.008 * Math.exp(-r2*0.8);
+  return { ax: -Av*dy, ay: Av*dx };
+}
+function oceanFlow(now,x,y){
+  const t = tsushimaFlow(now,x,y);
+  const l = limanFlow(now,x,y);
+  const v = vortexFlow(now,x,y);
+  return { ax: t.ax + l.ax + v.ax, ay: t.ay + l.ay + v.ay };
+}
 // シンプル太鼓ヒット
 function taiko(time, freq=110, dur=0.25){
   const ctxa = ensureAudio(); if (!ctxa) return;
@@ -249,8 +301,18 @@ function spawnHeld() {
 
 function dropHeld() {
   if (!current || gameOver) return;
+  if (!canDropNow()) return;
   current.isHeld = false;
+  // 位置に微小な揺らぎ（同一点スタック対策）
+  const jitter = (Math.random()*2-1) * current.r*0.3;
+  current.x = clamp(current.x + jitter, world.left+current.r, world.right-current.r);
+  // 初速も少し与える（左右キー操作で強めに）
+  const keyKick = (KEYS.right?0.8:0) + (KEYS.left?-0.8:0);
+  const randKick = (Math.random()*2-1) * 0.8;
+  current.vx += keyKick + randKick;
   balls.push(current);
+  lastDroppedBall = current;
+  lastDropTime = performance.now();
   current = null;
 }
 
@@ -270,6 +332,18 @@ window.addEventListener('keyup', e=>{
 });
 document.getElementById('dropBtn').onclick = dropHeld;
 document.getElementById('resetBtn').onclick = hardReset;
+
+// ドロップ連打対策
+let lastDropTime = 0;
+let lastDroppedBall = null;
+function canDropNow(){
+  const now = performance.now();
+  // 最低インターバル
+  if (now - lastDropTime < 250) return false;
+  // 直前の玉が十分落ちるまで待つ
+  if (lastDroppedBall && lastDroppedBall.y < world.top + 160) return false;
+  return true;
+}
 
 // スマホ/タッチ・ポインタ操作
 let pointerActive = false;
@@ -361,6 +435,8 @@ let last = performance.now();
 function tick(now){
   const dt = Math.min(33, now-last); // ms（未使用でも将来のため残す）
   last = now;
+  // 合成流（対馬×リマン＋渦）
+  const flow = (x,y)=> oceanFlow(now,x,y);
 
   // 保持中のボールを左右移動
   if (current){
@@ -380,6 +456,10 @@ function tick(now){
     // 抵抗
     b.vx *= world.air;
     b.vy *= world.air;
+    // 海流の影響（位置に応じて微加速）
+    const f = flow(b.x, b.y);
+    b.vx += f.ax;
+    b.vy += f.ay;
     // 位置更新
     b.x += b.vx;
     b.y += b.vy;
@@ -418,38 +498,44 @@ function tick(now){
         const nx=(a.x+b.x)/2, ny=(a.y+b.y)/2;
         // 0〜4: 通常の出世
         if (a.level < 5){
-          const nl = a.level+1;
-          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          let nl = a.level+1;
+          let extra = applyMixingBonus(nx, ny, a.level, nl, now);
+          nl = extra.level;
+          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6 + (extra.vyBoost||0), r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
           // 効果音
           playFestivalShort();
           // 合体後のアイテム名を表示
           showBurst(LEVELS[nl].name, nx, ny-20, 'small');
-          score += LEVELS[a.level].score;
+          score += LEVELS[a.level].score + (extra.bonus||0);
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
           break outer;
         }
         // 5: ぶり → 6: 刺身
         if (a.level === 5){
-          const nl = 6;
-          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          let nl = 6;
+          let extra = applyMixingBonus(nx, ny, a.level, nl, now);
+          nl = extra.level; // ぶりは固定で6だが、ボーナスだけ適用
+          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6 + (extra.vyBoost||0), r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
           // 効果音（寒ブリ祭り！／煌）
           playFestivalBig();
           showBurst(Math.random()<0.5 ? '寒ブリ祭り！' : '煌', nx, ny-28, Math.random()<0.5 ? 'big' : 'kira');
           // 合体後のアイテム名も表示
           showBurst(LEVELS[nl].name, nx, ny+6, 'small');
-          score += LEVELS[a.level].score;
+          score += LEVELS[a.level].score + (extra.bonus||0);
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
           break outer;
         }
         // 6〜8: 刺身→寿司→ぶり大根→鰤しゃぶ
         if (a.level >= 6 && a.level <= 8){
-          const nl = a.level + 1;
-          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
+          let nl = a.level + 1;
+          let extra = applyMixingBonus(nx, ny, a.level, nl, now);
+          nl = extra.level;
+          const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6 + (extra.vyBoost||0), r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
           playFestivalShort();
           showBurst(LEVELS[nl].name, nx, ny-20, 'small');
-          score += LEVELS[a.level].score;
+          score += LEVELS[a.level].score + (extra.bonus||0);
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
           break outer;
@@ -514,6 +600,11 @@ function draw(){
     ctx.globalAlpha = 1;
   }
 
+  // 海流ガイド描画（ONのとき）
+  if (showCurrents){
+    drawCurrentOverlay();
+  }
+
   // 保持中の影
   if (current){
     ctx.globalAlpha = 0.2;
@@ -527,6 +618,53 @@ function draw(){
   // ボール
   for (const b of balls) drawBall(b);
 
+  ctx.restore();
+}
+
+function drawCurrentOverlay(){
+  const now = performance.now();
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  const stepX = 100, stepY = 110;
+  for (let y=world.top+80; y<world.bottom-140; y+=stepY){
+    for (let x=world.left+40; x<world.right-40; x+=stepX){
+      const t = tsushimaFlow(now,x,y);
+      const l = limanFlow(now,x,y);
+      drawArrow(x,y, t.ax, t.ay, '#ffb3a1'); // 暖流=赤み
+      drawArrow(x,y, l.ax, l.ay, '#9fd0ff'); // 寒流=青み
+    }
+  }
+  // ラベル
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = '#ffccb5';
+  ctx.font = 'bold 14px system-ui, -apple-system';
+  ctx.fillText('対馬海流（暖流）', world.left+60, world.top+90);
+  ctx.fillStyle = '#c8e4ff';
+  ctx.fillText('リマン海流（寒流）', world.right-180, world.top+90);
+  ctx.restore();
+}
+function drawArrow(x,y, vx,vy, color){
+  const len = Math.hypot(vx,vy);
+  if (len < 0.001) return;
+  const scale = 42; // 見やすい長さへスケール
+  const dx = (vx/len)*scale, dy=(vy/len)*scale;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x+dx, y+dy);
+  ctx.stroke();
+  // 矢羽
+  const ang = Math.atan2(dy,dx);
+  const ah = 6;
+  ctx.beginPath();
+  ctx.moveTo(x+dx, y+dy);
+  ctx.lineTo(x+dx - Math.cos(ang-0.4)*12, y+dy - Math.sin(ang-0.4)*12);
+  ctx.lineTo(x+dx - Math.cos(ang+0.4)*12, y+dy - Math.sin(ang+0.4)*12);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
   ctx.restore();
 }
 
@@ -571,6 +709,30 @@ function drawBall(b){
   ctx.arc(b.x + r*0.25, b.y + r*0.25, r*0.7, Math.PI*0.8, Math.PI*1.2);
   ctx.stroke();
   ctx.restore();
+}
+
+// 潮目（対馬×リマンの合流域）ボーナス
+function isInMixZone(x,y, now){
+  const bandW = 140 + 40*Math.sin(now/5000); // 緩やかに幅変化
+  const cx = (world.left+world.right)/2;
+  return Math.abs(x - cx) < bandW/2 && y > world.top+80 && y < world.bottom-160;
+}
+function applyMixingBonus(x,y, level, nextLevel, now){
+  let res = { level: nextLevel, bonus: 0, vyBoost: 0 };
+  if (!isInMixZone(x,y, now)) return res;
+  // 潮目ボーナス表示
+  showBurst('潮目ボーナス', x, y-34, 'small');
+  smallBell((ensureAudio()||{currentTime:0}).currentTime||0);
+  // 追加スコア
+  res.bonus = Math.round(LEVELS[level].score * 0.5);
+  // 低レベル帯はまれに+2段階成長
+  if (level <= 4 && Math.random() < 0.15){
+    res.level = Math.min(nextLevel+1, LEVELS.length-1);
+    showBurst('暖流に乗った！', x, y-56, 'small');
+  }
+  // 新しい玉に上向きのちょいブースト
+  res.vyBoost = -1.5;
+  return res;
 }
 
 function shade(hex, lum){

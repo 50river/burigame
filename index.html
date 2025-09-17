@@ -33,12 +33,36 @@
             音量 <input id="bgmVolume" type="range" min="0" max="1" step="0.01" value="0.35" style="flex:1" />
           </label>
         </div>
+        <div class="ocean">
+          <button id="flowToggle" class="secondary">海流ガイド: OFF</button>
+          <button id="flowInfo" class="secondary">海流の解説</button>
+        </div>
       </div>
     </div>
 
     <div class="stage">
       <canvas id="game" width="720" height="960" aria-label="ゲームフィールド"></canvas>
       <div id="fx" class="fx" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div class="gameover" id="flowInfoOverlay" aria-hidden="true" style="display:none">
+    <div class="dialog">
+      <h2>日本海の海流と鰤</h2>
+      <p>
+        日本海では、南から北へ流れる暖流「対馬海流」と、北から南へ流れる寒流「リマン海流」が出会い、
+        水温や栄養塩が混ざる「潮目（しおめ）」が生まれます。潮目はプランクトンが豊富で小魚が集まり、
+        それを追う鰤にとって絶好の“ごちそうスポット”になります。
+      </p>
+      <ul>
+        <li><b>対馬海流</b>（暖流）: 右向き＋わずかに上へ。栄養と暖かさで成長を後押し。</li>
+        <li><b>リマン海流</b>（寒流）: 左向き＋わずかに下へ。冷たさが身を締め、旨味の育成に寄与。</li>
+        <li><b>潮目ボーナス</b>: 2つの海流が交わる帯（中央付近）で合体すると、追加スコアや
+          まれに+2段階成長が発生します。</li>
+      </ul>
+      <div class="row">
+        <button id="flowClose">閉じる</button>
+      </div>
     </div>
   </div>
 

@@ -30,6 +30,7 @@ canvas{width:100%;height:auto;touch-action:none}
 .controls{display:grid;gap:8px;margin-top:8px}
 .controls button{background:var(--accent);color:#052a2a;border:none;border-radius:12px;padding:10px 12px;font-weight:700;cursor:pointer}
 .controls button.secondary{background:#203456;color:#d7e9ff}
+.ocean{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .audio{display:grid;gap:8px;margin-top:4px}
 .audio input[type=range]{width:100%}
 .levels{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
