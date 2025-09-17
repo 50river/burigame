@@ -105,15 +105,6 @@ function playFestivalBig(){
   taiko(t, 140); taiko(t+0.14, 100); taiko(t+0.28, 140); taiko(t+0.42, 85);
   smallBell(t+0.5);
 }
-function speak(text){
-  if (!audioEnabled) return;
-  if (!('speechSynthesis' in window)) return;
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'ja-JP';
-  u.rate = 1.05; u.pitch = 1.0; u.volume = 1.0;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(u);
-}
 function showBurst(text, x, y, kind='small'){
   const rect = canvas.getBoundingClientRect();
   const stageRect = stageEl.getBoundingClientRect();
@@ -331,8 +322,7 @@ function tick(now){
         if (a.level < 5){
           const nl = a.level+1;
           const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
-          // 演出・SE
-          speak('ほいやさ！');
+          // 効果音
           playFestivalShort();
           score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
@@ -343,8 +333,7 @@ function tick(now){
         if (a.level === 5){
           const nl = 6;
           const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
-          // 演出・SE（寒ブリ祭り！／煌）
-          speak('ほいやさ！');
+          // 効果音（寒ブリ祭り！／煌）
           playFestivalBig();
           showBurst(Math.random()<0.5 ? '寒ブリ祭り！' : '煌', nx, ny-20, Math.random()<0.5 ? 'big' : 'kira');
           score += LEVELS[a.level].score;
@@ -356,7 +345,6 @@ function tick(now){
         if (a.level >= 6 && a.level <= 8){
           const nl = a.level + 1;
           const nb = { x:nx, y:ny, vx:(a.vx+b.vx)/2, vy:-6, r:LEVELS[nl].r, level:nl, id:crypto.randomUUID() };
-          speak('ほいやさ！');
           playFestivalShort();
           score += LEVELS[a.level].score;
           balls.splice(j,1); balls.splice(i,1);
@@ -365,7 +353,6 @@ function tick(now){
         }
         // 9: 鰤しゃぶ → 合体で消滅（ボーナス）
         if (a.level === 9){
-          speak('ほいやさ！');
           playFestivalBig();
           showBurst('煌', nx, ny-20, 'kira');
           balls.splice(j,1); balls.splice(i,1);
@@ -509,4 +496,3 @@ document.getElementById('quit').onclick = ()=>{
 preloadImages().then(()=>{
   hardReset();
 });
-
