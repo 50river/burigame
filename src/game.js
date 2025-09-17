@@ -332,7 +332,7 @@ const KEYS = { left:false, right:false };
 window.addEventListener('keydown', e=>{
   if (e.code==='ArrowLeft' || e.code==='KeyA') KEYS.left=true;
   if (e.code==='ArrowRight'|| e.code==='KeyD') KEYS.right=true;
-  if (e.code==='Space') dropHeld();
+  if (e.code==='Space') dropQueued = true;
   if (e.code==='KeyR') hardReset();
   ensureAudio();
   startBgm();
@@ -341,18 +341,25 @@ window.addEventListener('keyup', e=>{
   if (e.code==='ArrowLeft' || e.code==='KeyA') KEYS.left=false;
   if (e.code==='ArrowRight'|| e.code==='KeyD') KEYS.right=false;
 });
-document.getElementById('dropBtn').onclick = dropHeld;
+document.getElementById('dropBtn').onclick = ()=>{ dropQueued = true; };
 document.getElementById('resetBtn').onclick = hardReset;
 
-// ドロップ連打対策
+// ドロップ連打対策 + 入力バッファ
 let lastDropTime = 0;
 let lastDroppedBall = null;
+let dropQueued = false;
+const dropCooldownMs = 380; // 最低インターバル
+const dropFlightMs = 300;   // 最低飛行時間
 function canDropNow(){
   const now = performance.now();
-  // 最低インターバル
-  if (now - lastDropTime < 250) return false;
-  // 直前の玉が十分落ちるまで待つ
-  if (lastDroppedBall && lastDroppedBall.y < world.top + 160) return false;
+  if (!current) return false; // 保持中の玉が必要
+  if (now - lastDropTime < dropCooldownMs) return false;
+  // 直前の玉がある場合は、一定時間経過 or 一定高さまで下がるのを待つ
+  if (lastDroppedBall){
+    if (now - lastDropTime > dropFlightMs) return true;
+    if (lastDroppedBall.y > world.top + 80) return true;
+    return false;
+  }
   return true;
 }
 
@@ -454,9 +461,19 @@ function tick(now){
     if (KEYS.left) current.x -= speed;
     if (KEYS.right) current.x += speed;
     current.x = clamp(current.x, world.left+current.r, world.right-current.r);
+    // ドロップがキューされていれば、条件を満たしたタイミングで落とす
+    if (dropQueued && canDropNow()){
+      dropHeld();
+      dropQueued = false;
+    }
   } else if (!gameOver) {
     // 新しいボールを供給
     spawnHeld();
+    // 供給直後にドロップがキューされていたら、即ドロップを試行
+    if (dropQueued && canDropNow()){
+      dropHeld();
+      dropQueued = false;
+    }
   }
 
   // 物理更新
