@@ -302,17 +302,35 @@
       a.y -= ny * overlap * (m2/total);
       b.x += nx * overlap * (m1/total);
       b.y += ny * overlap * (m1/total);
-	  // 反発（簡易）
-	  const relVx = b.vx - a.vx;
-	  const relVy = b.vy - a.vy;
-	  const vn = relVx*nx + relVy*ny;
-	  if (vn<0){
-		const imp = -(1+world.bounce)*vn/(1/m1+1/m2);
-		const ix = imp*nx, iy = imp*ny;
-		a.vx -= ix/m1; a.vy -= iy/m1;
-		b.vx += ix/m2; b.vy += iy/m2;
-	  }
-	}
+      // 反発（簡易）
+      const relVx = b.vx - a.vx;
+      const relVy = b.vy - a.vy;
+      const vn = relVx*nx + relVy*ny;
+      if (vn<0){
+        const imp = -(1+world.bounce)*vn/(1/m1+1/m2);
+        const ix = imp*nx, iy = imp*ny;
+        a.vx -= ix/m1; a.vy -= iy/m1;
+        b.vx += ix/m2; b.vy += iy/m2;
+      }
+    }
+  }
+
+  // ピクセル重なりが残る場合に、法線方向へ最小移動で分離
+  function resolvePixel(a,b){
+    if (!MASKS[a.level] || !MASKS[b.level]) return; // マスクがなければスキップ
+    if (!pixelOverlap(a,b)) return;
+    let dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy);
+    if (d===0){ dx=1; dy=0; d=1; }
+    const nx = dx/d, ny = dy/d;
+    const m1 = a.r, m2 = b.r; const total=m1+m2;
+    // 最大8ステップ、1pxずつ離す（必要最低限）
+    for (let k=0;k<8;k++){
+      if (!pixelOverlap(a,b)) break;
+      a.x -= nx * (m2/total);
+      a.y -= ny * (m2/total);
+      b.x += nx * (m1/total);
+      b.y += ny * (m1/total);
+    }
   }
 
   function clamp(val,min,max){return Math.max(min,Math.min(max,val));}
@@ -358,19 +376,20 @@
   }
 
 	// 円同士の衝突解決 & マージ
-	// 1) 位置解決 + 反発
-	for (let i=0;i<balls.length;i++){
-	  for (let j=i+1;j<balls.length;j++){
-		resolveCircle(balls[i], balls[j]);
-	  }
-	}
+  // 1) 位置解決 + 反発
+  for (let i=0;i<balls.length;i++){
+    for (let j=i+1;j<balls.length;j++){
+      resolveCircle(balls[i], balls[j]);
+      resolvePixel(balls[i], balls[j]);
+    }
+  }
   // 2) マージ（必ず触れたら合体）
   outer: for (let i=0;i<balls.length;i++){
     for (let j=i+1;j<balls.length;j++){
       const a=balls[i], b=balls[j];
-      if (!closeEnough(a,b)) continue; // まずは距離で粗判定
+      if (!closeEnough(a,b)) continue; // 物理半径で粗判定
       if (MASKS[a.level] && MASKS[b.level]){
-        if (!pixelOverlap(a,b)) continue; // 画像の不透明領域が接触しているか
+        if (!pixelOverlap(a,b)) continue; // 凹凸を含む見た目シルエットで厳密判定
       }
 
       // (A) 料理×料理 → 消滅（ボーナス）
