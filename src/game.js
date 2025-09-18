@@ -70,7 +70,6 @@ const fxLayer = document.getElementById('fx');
 const stageEl = document.querySelector('.stage');
 const bgmToggleBtn = document.getElementById('bgmToggle');
 const bgmVolumeSlider = document.getElementById('bgmVolume');
-const flowToggleBtn = document.getElementById('flowToggle');
 const flowInfoBtn = document.getElementById('flowInfo');
 const flowInfoOverlay = document.getElementById('flowInfoOverlay');
 const flowCloseBtn = document.getElementById('flowClose');
@@ -133,14 +132,7 @@ if (bgmVolumeSlider){
 }
 updateBgmUi();
 
-// 海流の可視化トグル・解説
-let showCurrents = false;
-if (flowToggleBtn){
-  flowToggleBtn.addEventListener('click', ()=>{
-    showCurrents = !showCurrents;
-    flowToggleBtn.textContent = `海流ガイド: ${showCurrents?'ON':'OFF'}`;
-  });
-}
+// 海流の解説
 if (flowInfoBtn){
   flowInfoBtn.addEventListener('click', ()=>{
     flowInfoOverlay.style.display = 'flex';
@@ -404,12 +396,18 @@ function closeEnough(a,b){
   const dx=b.x-a.x, dy=b.y-a.y; const d=Math.hypot(dx,dy);
   return d <= a.r + b.r + 0.8; // 0.8px のマージン
 }
-function resolveCircle(a,b){
+const COLLISION_LIMIT = 3;
+function resolveCircle(a,b, collisionCounts){
   const dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy);
   if (d===0) { d=0.01; }
   const overlap = a.r + b.r - d;
   let adjusted = false;
   if (overlap>0){
+    const countA = collisionCounts.get(a.id) || 0;
+    const countB = collisionCounts.get(b.id) || 0;
+    if (countA >= COLLISION_LIMIT && countB >= COLLISION_LIMIT){
+      return false;
+    }
     const nx = dx/d, ny = dy/d;
     // 位置を押し出す
     const m1 = a.r, m2 = b.r; // 簡易質量
@@ -421,6 +419,8 @@ function resolveCircle(a,b){
     keepBallInside(a);
     keepBallInside(b);
     adjusted = true;
+    if (countA < COLLISION_LIMIT) collisionCounts.set(a.id, countA + 1);
+    if (countB < COLLISION_LIMIT) collisionCounts.set(b.id, countB + 1);
     // 反発（簡易）
     const relVx = b.vx - a.vx;
     const relVy = b.vy - a.vy;
@@ -564,11 +564,12 @@ function tick(now){
 
   // 円同士の衝突解決 & マージ
   // 1) 位置解決 + 反発（円ベース）
+  const collisionCounts = new Map();
   for (let iter=0; iter<5; iter++){
     let anyAdjust = false;
     for (let i=0;i<balls.length;i++){
       for (let j=i+1;j<balls.length;j++){
-        if (resolveCircle(balls[i], balls[j])) anyAdjust = true;
+        if (resolveCircle(balls[i], balls[j], collisionCounts)) anyAdjust = true;
       }
     }
     if (!anyAdjust) break;
@@ -704,10 +705,6 @@ function draw(){
     ctx.globalAlpha = 1;
   }
 
-  // 海流ガイド描画（ONのとき）
-  if (showCurrents){
-    drawCurrentOverlay();
-  }
 
   // 保持中の影
   if (current){
@@ -744,53 +741,6 @@ function draw(){
     ctx.fillText(`${warm?'対馬海流':'リマン海流'}タイム 残り ${tLeft} 秒`, (world.left+world.right)/2, world.top-3);
   }
 
-  ctx.restore();
-}
-
-function drawCurrentOverlay(){
-  const now = performance.now();
-  ctx.save();
-  ctx.globalAlpha = 0.18;
-  const stepX = 100, stepY = 110;
-  for (let y=world.top+80; y<world.bottom-140; y+=stepY){
-    for (let x=world.left+40; x<world.right-40; x+=stepX){
-      const t = tsushimaFlow(now,x,y);
-      const l = limanFlow(now,x,y);
-      drawArrow(x,y, t.ax, t.ay, '#ffb3a1'); // 暖流=赤み
-      drawArrow(x,y, l.ax, l.ay, '#9fd0ff'); // 寒流=青み
-    }
-  }
-  // ラベル
-  ctx.globalAlpha = 0.6;
-  ctx.fillStyle = '#ffccb5';
-  ctx.font = 'bold 14px system-ui, -apple-system';
-  ctx.fillText('対馬海流（暖流）', world.left+60, world.top+90);
-  ctx.fillStyle = '#c8e4ff';
-  ctx.fillText('リマン海流（寒流）', world.right-180, world.top+90);
-  ctx.restore();
-}
-function drawArrow(x,y, vx,vy, color){
-  const len = Math.hypot(vx,vy);
-  if (len < 0.001) return;
-  const scale = 42; // 見やすい長さへスケール
-  const dx = (vx/len)*scale, dy=(vy/len)*scale;
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x+dx, y+dy);
-  ctx.stroke();
-  // 矢羽
-  const ang = Math.atan2(dy,dx);
-  const ah = 6;
-  ctx.beginPath();
-  ctx.moveTo(x+dx, y+dy);
-  ctx.lineTo(x+dx - Math.cos(ang-0.4)*12, y+dy - Math.sin(ang-0.4)*12);
-  ctx.lineTo(x+dx - Math.cos(ang+0.4)*12, y+dy - Math.sin(ang+0.4)*12);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
   ctx.restore();
 }
 
