@@ -640,7 +640,7 @@ function tick(now){
   // 終了条件チェック（持続的に上端を越えた場合のみ）
   let anyOver = false;
   for (const b of balls){
-    if (b.y - b.r < world.top - 8){ anyOver = true; break; }
+    if (b.y - b.r <= world.top + 2){ anyOver = true; break; }
   }
   if (anyOver){
     if (!tick._overTopStart) tick._overTopStart = now;
