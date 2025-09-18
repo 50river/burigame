@@ -408,6 +408,7 @@ function resolveCircle(a,b){
   const dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy);
   if (d===0) { d=0.01; }
   const overlap = a.r + b.r - d;
+  let adjusted = false;
   if (overlap>0){
     const nx = dx/d, ny = dy/d;
     // 位置を押し出す
@@ -419,6 +420,7 @@ function resolveCircle(a,b){
     b.y += ny * overlap * (m1/total);
     keepBallInside(a);
     keepBallInside(b);
+    adjusted = true;
     // 反発（簡易）
     const relVx = b.vx - a.vx;
     const relVy = b.vy - a.vy;
@@ -465,11 +467,13 @@ function resolveCircle(a,b){
       }
     }
   }
+  return adjusted;
 }
 function clamp(val,min,max){return Math.max(min,Math.min(max,val));}
 function keepBallInside(b){
   const left = world.left + b.r;
   const right = world.right - b.r;
+  const top = world.top + b.r;
   const bottom = world.bottom - b.r;
   if (b.x < left){
     b.x = left;
@@ -478,6 +482,10 @@ function keepBallInside(b){
   if (b.x > right){
     b.x = right;
     if (b.vx > 0) b.vx = 0;
+  }
+  if (b.y < top){
+    b.y = top;
+    if (b.vy < 0) b.vy = 0;
   }
   if (b.y > bottom){
     b.y = bottom;
@@ -556,10 +564,14 @@ function tick(now){
 
   // 円同士の衝突解決 & マージ
   // 1) 位置解決 + 反発（円ベース）
-  for (let i=0;i<balls.length;i++){
-    for (let j=i+1;j<balls.length;j++){
-      resolveCircle(balls[i], balls[j]);
+  for (let iter=0; iter<5; iter++){
+    let anyAdjust = false;
+    for (let i=0;i<balls.length;i++){
+      for (let j=i+1;j<balls.length;j++){
+        if (resolveCircle(balls[i], balls[j])) anyAdjust = true;
+      }
     }
+    if (!anyAdjust) break;
   }
   // 2) マージ（必ず触れたら合体）
   outer: for (let i=0;i<balls.length;i++){
