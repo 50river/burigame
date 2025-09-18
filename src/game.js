@@ -55,6 +55,10 @@ let bonusUntil = 0;
 // 海流タイム（対馬 or リマン）
 let currentActive = 'none'; // 'tsushima' | 'liman' | 'none'
 let currentUntil = 0;
+let nextCurrentAt = Infinity;
+const CURRENT_DURATION_MS = 9000;
+const CURRENT_INTERVAL_MIN = 8000;
+const CURRENT_INTERVAL_VAR = 6000;
 let nextLevel = rollLevel();
 let current = null; // まだ落としていないボール
 let gameOver = false;
@@ -413,6 +417,8 @@ function resolveCircle(a,b){
     a.y -= ny * overlap * (m2/total);
     b.x += nx * overlap * (m1/total);
     b.y += ny * overlap * (m1/total);
+    keepBallInside(a);
+    keepBallInside(b);
     // 反発（簡易）
     const relVx = b.vx - a.vx;
     const relVy = b.vy - a.vy;
@@ -461,6 +467,23 @@ function resolveCircle(a,b){
   }
 }
 function clamp(val,min,max){return Math.max(min,Math.min(max,val));}
+function keepBallInside(b){
+  const left = world.left + b.r;
+  const right = world.right - b.r;
+  const bottom = world.bottom - b.r;
+  if (b.x < left){
+    b.x = left;
+    if (b.vx < 0) b.vx = 0;
+  }
+  if (b.x > right){
+    b.x = right;
+    if (b.vx > 0) b.vx = 0;
+  }
+  if (b.y > bottom){
+    b.y = bottom;
+    if (b.vy > 0) b.vy = 0;
+  }
+}
 
 // ========== メインループ ==========
 let last = performance.now();
@@ -468,6 +491,13 @@ function tick(now){
   const dt = Math.min(33, now-last); // ms（未使用でも将来のため残す）
   last = now;
   // 合成流（対馬×リマン＋渦）可視化用。物理への適用は海流タイム時のみ。
+
+  if (currentActive === 'none' && now >= nextCurrentAt){
+    const mode = Math.random()<0.5 ? 'tsushima' : 'liman';
+    const cx = (world.left + world.right)/2;
+    const cy = world.top + 120;
+    startCurrentTime(now, mode, cx, cy);
+  }
 
   // 保持中のボールを左右移動
   if (current){
@@ -520,6 +550,7 @@ function tick(now){
         b.vx *= world.friction;
       }
     }
+    keepBallInside(b);
     // 終了条件チェックはループ後にまとめて行う
   }
 
@@ -551,7 +582,6 @@ function tick(now){
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
           maybeStartBuriOkoshi(now, nx, ny);
-          maybeStartCurrentTime(now, nx, ny);
           break outer;
         }
         // 5: ぶり → 6: 刺身
@@ -567,7 +597,6 @@ function tick(now){
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
           maybeStartBuriOkoshi(now, nx, ny);
-          maybeStartCurrentTime(now, nx, ny);
           break outer;
         }
         // 6〜8: 刺身→寿司→ぶり大根→鰤しゃぶ
@@ -580,7 +609,6 @@ function tick(now){
           balls.splice(j,1); balls.splice(i,1);
           balls.push(nb);
           maybeStartBuriOkoshi(now, nx, ny);
-          maybeStartCurrentTime(now, nx, ny);
           break outer;
         }
         // 9: 鰤しゃぶ → 合体で消滅（ボーナス）
@@ -618,6 +646,7 @@ function tick(now){
   if (currentActive !== 'none' && now > currentUntil){
     const ended = currentActive; currentActive = 'none';
     showBurst(`${ended==='tsushima'?'対馬海流':'リマン海流'}タイム 終了`, (world.left+world.right)/2, world.top+60, 'small');
+    scheduleNextCurrent(now);
   }
 
   draw();
@@ -796,8 +825,6 @@ function drawBall(b){
   ctx.restore();
 }
 
-// 潮目ボーナス（廃止）
-
 // ぶりおこし（一定時間ぶりのみ出現）
 function startBuriOkoshi(now, x, y){
   if (bonusActive) return;
@@ -820,20 +847,17 @@ function maybeStartBuriOkoshi(now, x, y){
 function startCurrentTime(now, mode, x, y){
   if (currentActive !== 'none') return;
   currentActive = mode; // 'tsushima' or 'liman'
-  currentUntil = now + 9000; // 9秒
+  currentUntil = now + CURRENT_DURATION_MS; // 9秒
+  nextCurrentAt = Infinity;
   if (mode==='tsushima'){
     showBurst('対馬海流', x, y-28, 'big');
   } else {
     showBurst('リマン海流', x, y-28, 'big');
   }
 }
-function maybeStartCurrentTime(now, x, y){
-  if (currentActive !== 'none') return;
-  // 合体時にランダムで発生（確率 5%）
-  if (Math.random() < 0.05){
-    const mode = Math.random()<0.5 ? 'tsushima' : 'liman';
-    startCurrentTime(now, mode, x, y);
-  }
+
+function scheduleNextCurrent(now){
+  nextCurrentAt = now + CURRENT_INTERVAL_MIN + Math.random()*CURRENT_INTERVAL_VAR;
 }
 
 function shade(hex, lum){
@@ -863,8 +887,12 @@ function hardReset(){
   renderNext();
   current = null;
   gameOver = false;
+  currentActive = 'none';
+  currentUntil = 0;
+  nextCurrentAt = Infinity;
   document.getElementById('gameover').style.display = 'none';
   last = performance.now();
+  scheduleNextCurrent(last + 2000);
   spawnHeld();
   requestAnimationFrame(tick);
 }
