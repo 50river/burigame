@@ -73,6 +73,41 @@ const bgmVolumeSlider = document.getElementById('bgmVolume');
 const flowInfoBtn = document.getElementById('flowInfo');
 const flowInfoOverlay = document.getElementById('flowInfoOverlay');
 const flowCloseBtn = document.getElementById('flowClose');
+const shareBtn = document.getElementById('shareBtn');
+const shareStatus = document.getElementById('shareStatus');
+const sharePreviewImg = document.getElementById('sharePreview');
+
+const SHARE_URL = window.location.href.split('#')[0];
+
+let shareBlob = null;
+let shareFile = null;
+let sharePreviewUrl = null;
+let shareReady = false;
+
+function setShareStatus(message){
+  if (shareStatus) shareStatus.textContent = message || '';
+}
+
+function resetShareArtifacts(){
+  shareReady = false;
+  shareBlob = null;
+  shareFile = null;
+  if (sharePreviewUrl){
+    URL.revokeObjectURL(sharePreviewUrl);
+    sharePreviewUrl = null;
+  }
+  if (sharePreviewImg){
+    sharePreviewImg.removeAttribute('src');
+    sharePreviewImg.style.display = 'none';
+  }
+  setShareStatus('');
+  if (shareBtn){
+    shareBtn.disabled = true;
+    shareBtn.textContent = '結果をシェア';
+  }
+}
+
+resetShareArtifacts();
 
 // 効果音＆演出
 let audioEnabled = true;
@@ -836,11 +871,139 @@ function shade(hex, lum){
   return rgb;
 }
 
+function canvasToPngBlob(){
+  return new Promise((resolve, reject)=>{
+    try{
+      if (typeof canvas.toBlob === 'function'){
+        canvas.toBlob(blob=>{
+          if (blob){
+            resolve(blob);
+          } else {
+            reject(new Error('capture-failed'));
+          }
+        }, 'image/png');
+        return;
+      }
+      const dataUrl = canvas.toDataURL('image/png');
+      const base64 = dataUrl.split(',')[1];
+      if (!base64){
+        reject(new Error('capture-failed'));
+        return;
+      }
+      const binary = atob(base64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i=0;i<len;i++) bytes[i] = binary.charCodeAt(i);
+      resolve(new Blob([bytes], { type:'image/png' }));
+    }catch(err){
+      reject(err);
+    }
+  });
+}
+
+async function prepareGameoverShare(){
+  if (!shareBtn) return;
+  try{
+    const blob = await canvasToPngBlob();
+    shareBlob = blob;
+    shareFile = (typeof File === 'function') ? new File([blob], `burigame-score-${Date.now()}.png`, { type:'image/png' }) : null;
+    if (sharePreviewUrl) URL.revokeObjectURL(sharePreviewUrl);
+    sharePreviewUrl = URL.createObjectURL(blob);
+    if (sharePreviewImg){
+      sharePreviewImg.src = sharePreviewUrl;
+      sharePreviewImg.style.display = 'block';
+    }
+    shareReady = true;
+    setShareStatus('スクリーンショットの準備ができました。');
+  }catch(err){
+    console.warn('Failed to create share image', err);
+    shareBlob = null;
+    shareFile = null;
+    shareReady = false;
+    setShareStatus('スクリーンショットを作成できませんでした。');
+  }
+}
+
+async function fallbackShare(text, url){
+  const parts = [];
+  const shareMessage = `${text}\n${url}`;
+  if (shareBlob){
+    const downloadUrl = sharePreviewUrl || URL.createObjectURL(shareBlob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `burigame-score-${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    parts.push('画像をダウンロードしました。');
+    if (!sharePreviewUrl){
+      setTimeout(()=>URL.revokeObjectURL(downloadUrl), 1000);
+    }
+  }
+  let clipboardSuccess = false;
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    try{
+      await navigator.clipboard.writeText(shareMessage);
+      clipboardSuccess = true;
+      parts.push('スコアとURLをコピーしました。');
+    }catch(err){
+      parts.push('テキストを自動コピーできませんでした。');
+    }
+  } else {
+    parts.push('お使いの環境は自動コピーに対応していません。');
+  }
+  if (!clipboardSuccess){
+    parts.push('以下のテキストをコピーしてシェアしてください。');
+    parts.push(shareMessage);
+  }
+  setShareStatus(parts.join('\n\n'));
+}
+
+async function attemptShareFlow(text, url){
+  try{
+    if (shareFile && navigator.canShare){
+      let canShareFiles = false;
+      try{
+        canShareFiles = navigator.canShare({ files:[shareFile] });
+      }catch(err){
+        canShareFiles = false;
+      }
+      if (canShareFiles && navigator.share){
+        await navigator.share({ title:'ぶりゲーム', text, url, files:[shareFile] });
+        setShareStatus('シェアできました！');
+        return;
+      }
+    }
+    if (navigator.share){
+      await navigator.share({ title:'ぶりゲーム', text:`${text}\n${url}` });
+      setShareStatus('画像なしでシェアしました。');
+      return;
+    }
+  }catch(err){
+    if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')){
+      setShareStatus('シェアをキャンセルしました。');
+      return;
+    }
+    console.warn('Share failed', err);
+    setShareStatus('シェアに失敗しました。');
+    return;
+  }
+  await fallbackShare(text, url);
+}
+
 function triggerGameOver(){
   if (gameOver) return;
   gameOver = true;
   document.getElementById('finalScore').textContent = score.toLocaleString();
   document.getElementById('gameover').style.display = 'flex';
+  resetShareArtifacts();
+  setShareStatus('スクリーンショットを準備中…');
+  if (shareBtn) shareBtn.disabled = true;
+  requestAnimationFrame(()=>{
+    prepareGameoverShare().finally(()=>{
+      if (shareBtn) shareBtn.disabled = false;
+    });
+  });
 }
 
 function hardReset(){
@@ -854,10 +1017,34 @@ function hardReset(){
   currentUntil = 0;
   nextCurrentAt = Infinity;
   document.getElementById('gameover').style.display = 'none';
+  resetShareArtifacts();
   last = performance.now();
   scheduleNextCurrent(last + 2000);
   spawnHeld();
   requestAnimationFrame(tick);
+}
+
+if (shareBtn){
+  shareBtn.addEventListener('click', async ()=>{
+    if (shareBtn.disabled) return;
+    const defaultLabel = '結果をシェア';
+    shareBtn.disabled = true;
+    shareBtn.textContent = 'シェア準備中…';
+    if (!shareReady){
+      setShareStatus('スクリーンショットを準備中…');
+      await prepareGameoverShare().catch(()=>{});
+    }
+    shareBtn.textContent = 'シェア中…';
+    const shareText = `スコア ${score.toLocaleString()} 点！ #ぶりゲーム`;
+    try{
+      await attemptShareFlow(shareText, SHARE_URL);
+    }catch(err){
+      console.error('Unexpected share error', err);
+      setShareStatus('シェア中に予期せぬエラーが起きました。');
+    }
+    shareBtn.textContent = defaultLabel;
+    shareBtn.disabled = false;
+  });
 }
 
 document.getElementById('again').onclick = hardReset;
