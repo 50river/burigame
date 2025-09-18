@@ -416,16 +416,30 @@ function resolveCircle(a,b){
     // 反発（簡易）
     const relVx = b.vx - a.vx;
     const relVy = b.vy - a.vy;
+    const relSpeedSq = relVx*relVx + relVy*relVy;
+    const settleSpeed = 0.45; // しきい値より遅い接触は滑らかに減速
+    if (relSpeedSq < settleSpeed*settleSpeed){
+      const avgVx = (a.vx*m1 + b.vx*m2)/total;
+      const avgVy = (a.vy*m1 + b.vy*m2)/total;
+      a.vx = avgVx; a.vy = avgVy;
+      b.vx = avgVx; b.vy = avgVy;
+      // 微小な速度は完全に止めて振動を防ぐ
+      if (Math.abs(a.vx)<0.05) a.vx=0;
+      if (Math.abs(a.vy)<0.05) a.vy=0;
+      if (Math.abs(b.vx)<0.05) b.vx=0;
+      if (Math.abs(b.vy)<0.05) b.vy=0;
+      return;
+    }
     const vn = relVx*nx + relVy*ny;
     if (vn<0){
       const vnAbs = Math.abs(vn);
-      const e = (vnAbs < 0.6) ? 0.0 : world.bounce; // 低速時は無反発
+      const e = (vnAbs < 0.9) ? 0.0 : world.bounce; // 低速時は無反発
       const imp = -(1+e)*vn/(1/m1+1/m2);
       const ix = imp*nx, iy = imp*ny;
       a.vx -= ix/m1; a.vy -= iy/m1;
       b.vx += ix/m2; b.vy += iy/m2;
       // 低速接触時の接線減衰で振動を抑える
-      if (vnAbs < 0.6){
+      if (vnAbs < 0.9){
         const tx = -ny, ty = nx;
         const vt = relVx*tx + relVy*ty;
         const mu = 0.02;
@@ -434,8 +448,8 @@ function resolveCircle(a,b){
         b.vx += jft*tx/m2; b.vy += jft*ty/m2;
       }
       // ごく小さい速度はゼロ止め
-      if (Math.abs(a.vx)<0.02) a.vx=0; if (Math.abs(a.vy)<0.02) a.vy=0;
-      if (Math.abs(b.vx)<0.02) b.vx=0; if (Math.abs(b.vy)<0.02) b.vy=0;
+      if (Math.abs(a.vx)<0.04) a.vx=0; if (Math.abs(a.vy)<0.04) a.vy=0;
+      if (Math.abs(b.vx)<0.04) b.vx=0; if (Math.abs(b.vy)<0.04) b.vy=0;
       // ぶつかり音（スパム防止の簡易スロットル）
       const nowMs = performance.now();
       const speed = Math.min(1.0, (-vn)/8); // 当たり強度

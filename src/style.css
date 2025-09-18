@@ -34,6 +34,9 @@ canvas{width:100%;height:auto;touch-action:none}
 .audio{display:grid;gap:8px;margin-top:4px}
 .audio input[type=range]{width:100%}
 .levels{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.info-block{margin-top:4px;background:#101c33;border:1px solid #233660;border-radius:12px;padding:12px;font-size:12px;line-height:1.6;display:grid;gap:6px}
+.info-block ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.info-title{font-weight:700;color:#5bc0be;font-size:12px;letter-spacing:.02em}
 .pill{display:flex;align-items:center;gap:8px;background:#0f1d35;border:1px solid #243a69;border-radius:999px;padding:6px 10px;font-size:12px}
 .dot{width:14px;height:14px;border-radius:50%}
 .thumb{width:24px;height:24px;border-radius:50%;object-fit:cover;background:#0b132b;border:1px solid #223c6a}
