@@ -326,6 +326,9 @@ function dropHeld() {
 // ========== 入力 ==========
 const KEYS = { left:false, right:false };
 window.addEventListener('keydown', e=>{
+  if (e.code==='ArrowLeft' || e.code==='KeyA' || e.code==='ArrowRight' || e.code==='KeyD' || e.code==='Space'){
+    e.preventDefault();
+  }
   if (e.code==='ArrowLeft' || e.code==='KeyA') KEYS.left=true;
   if (e.code==='ArrowRight'|| e.code==='KeyD') KEYS.right=true;
   if (e.code==='Space') dropQueued = true;
@@ -405,9 +408,7 @@ function resolveCircle(a,b, collisionCounts){
   if (overlap>0){
     const countA = collisionCounts.get(a.id) || 0;
     const countB = collisionCounts.get(b.id) || 0;
-    if (countA >= COLLISION_LIMIT && countB >= COLLISION_LIMIT){
-      return false;
-    }
+    const limitReached = countA >= COLLISION_LIMIT || countB >= COLLISION_LIMIT;
     const nx = dx/d, ny = dy/d;
     // 位置を押し出す
     const m1 = a.r, m2 = b.r; // 簡易質量
@@ -419,14 +420,14 @@ function resolveCircle(a,b, collisionCounts){
     keepBallInside(a);
     keepBallInside(b);
     adjusted = true;
-    if (countA < COLLISION_LIMIT) collisionCounts.set(a.id, countA + 1);
-    if (countB < COLLISION_LIMIT) collisionCounts.set(b.id, countB + 1);
+    collisionCounts.set(a.id, Math.min(COLLISION_LIMIT, countA + 1));
+    collisionCounts.set(b.id, Math.min(COLLISION_LIMIT, countB + 1));
     // 反発（簡易）
     const relVx = b.vx - a.vx;
     const relVy = b.vy - a.vy;
     const relSpeedSq = relVx*relVx + relVy*relVy;
     const settleSpeed = 0.45; // しきい値より遅い接触は滑らかに減速
-    if (relSpeedSq < settleSpeed*settleSpeed){
+    if (limitReached || relSpeedSq < settleSpeed*settleSpeed){
       const avgVx = (a.vx*m1 + b.vx*m2)/total;
       const avgVy = (a.vy*m1 + b.vy*m2)/total;
       a.vx = avgVx; a.vy = avgVy;
@@ -436,7 +437,7 @@ function resolveCircle(a,b, collisionCounts){
       if (Math.abs(a.vy)<0.05) a.vy=0;
       if (Math.abs(b.vx)<0.05) b.vx=0;
       if (Math.abs(b.vy)<0.05) b.vy=0;
-      return;
+      return true;
     }
     const vn = relVx*nx + relVy*ny;
     if (vn<0){
