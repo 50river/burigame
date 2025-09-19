@@ -76,6 +76,9 @@ const flowCloseBtn = document.getElementById('flowClose');
 const shareBtn = document.getElementById('shareBtn');
 const shareStatus = document.getElementById('shareStatus');
 const sharePreviewImg = document.getElementById('sharePreview');
+const shareXLink = document.getElementById('shareX');
+const shareLineLink = document.getElementById('shareLine');
+const shareFacebookLink = document.getElementById('shareFacebook');
 
 const SHARE_URL = window.location.href.split('#')[0];
 
@@ -83,9 +86,39 @@ let shareBlob = null;
 let shareFile = null;
 let sharePreviewUrl = null;
 let shareReady = false;
+let lastShareText = '';
 
 function setShareStatus(message){
   if (shareStatus) shareStatus.textContent = message || '';
+}
+
+function updateSnsLinks(text, url = SHARE_URL){
+  const entries = [
+    {
+      el: shareXLink,
+      href: text ? `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}` : '#'
+    },
+    {
+      el: shareLineLink,
+      href: text ? `https://line.me/R/msg/text/?${encodeURIComponent(`${text}\n${url}`)}` : '#'
+    },
+    {
+      el: shareFacebookLink,
+      href: text ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(text)}` : '#'
+    }
+  ];
+  for (const entry of entries){
+    if (!entry.el) continue;
+    if (text){
+      entry.el.href = entry.href;
+      entry.el.classList.remove('is-disabled');
+      entry.el.setAttribute('aria-disabled', 'false');
+    } else {
+      entry.el.href = '#';
+      entry.el.classList.add('is-disabled');
+      entry.el.setAttribute('aria-disabled', 'true');
+    }
+  }
 }
 
 function resetShareArtifacts(){
@@ -101,6 +134,8 @@ function resetShareArtifacts(){
     sharePreviewImg.style.display = 'none';
   }
   setShareStatus('');
+  lastShareText = '';
+  updateSnsLinks(null);
   if (shareBtn){
     shareBtn.disabled = true;
     shareBtn.textContent = '結果をシェア';
@@ -914,7 +949,7 @@ async function prepareGameoverShare(){
       sharePreviewImg.style.display = 'block';
     }
     shareReady = true;
-    setShareStatus('スクリーンショットの準備ができました。');
+    setShareStatus('スクリーンショットの準備ができました。SNSボタンからシェアできます。');
   }catch(err){
     console.warn('Failed to create share image', err);
     shareBlob = null;
@@ -956,7 +991,8 @@ async function fallbackShare(text, url){
     parts.push('以下のテキストをコピーしてシェアしてください。');
     parts.push(shareMessage);
   }
-  setShareStatus(parts.join('\n\n'));
+  const message = parts.join('\n\n');
+  setShareStatus(message ? `${message}\n\nSNSボタンからも投稿できます。` : 'SNSボタンから投稿できます。');
 }
 
 async function attemptShareFlow(text, url){
@@ -999,6 +1035,8 @@ function triggerGameOver(){
   resetShareArtifacts();
   setShareStatus('スクリーンショットを準備中…');
   if (shareBtn) shareBtn.disabled = true;
+  lastShareText = `スコア ${score.toLocaleString()} 点！ #ぶりゲーム`;
+  updateSnsLinks(lastShareText, SHARE_URL);
   requestAnimationFrame(()=>{
     prepareGameoverShare().finally(()=>{
       if (shareBtn) shareBtn.disabled = false;
@@ -1035,7 +1073,11 @@ if (shareBtn){
       await prepareGameoverShare().catch(()=>{});
     }
     shareBtn.textContent = 'シェア中…';
-    const shareText = `スコア ${score.toLocaleString()} 点！ #ぶりゲーム`;
+    if (!lastShareText){
+      lastShareText = `スコア ${score.toLocaleString()} 点！ #ぶりゲーム`;
+      updateSnsLinks(lastShareText, SHARE_URL);
+    }
+    const shareText = lastShareText;
     try{
       await attemptShareFlow(shareText, SHARE_URL);
     }catch(err){
