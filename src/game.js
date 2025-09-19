@@ -20,10 +20,10 @@ const LEVELS = [
   { name: 'ふくらぎ', color: '#3fd0c9', r: 44, score: 8 },
   { name: 'がんど',  color: '#3b82f6', r: 58, score: 16 },
   { name: 'ぶり',   color: '#c084fc', r: 78, score: 64 },
-  { name: '刺身',   color: '#f472b6', r: 84, score: 96, isDish:true },
-  { name: '寿司',   color: '#60a5fa', r: 88, score: 128, isDish:true },
-  { name: 'ぶり大根', color: '#ff9f68', r: 88, score: 160, isDish:true },
-  { name: '鰤しゃぶ', color: '#ffd166', r: 88, score: 192, isDish:true },
+  { name: '刺身',   color: '#f472b6', r: 90, score: 96, isDish:true },
+  { name: '寿司',   color: '#60a5fa', r: 104, score: 128, isDish:true },
+  { name: 'ぶり大根', color: '#ff9f68', r: 118, score: 160, isDish:true },
+  { name: '鰤しゃぶ', color: '#ffd166', r: 136, score: 192, isDish:true },
 ];
 
 // 出現確率（序盤は低レベルが多め）
