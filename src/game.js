@@ -81,6 +81,8 @@ const shareLineLink = document.getElementById('shareLine');
 const shareFacebookLink = document.getElementById('shareFacebook');
 
 const SHARE_URL = window.location.href.split('#')[0];
+const SHARE_HASHTAGS = '#ぶりゲーム #冬の石川県のブリは最高';
+const SHARE_TITLE = 'ぶりゲーム';
 
 let shareBlob = null;
 let shareFile = null;
@@ -93,23 +95,24 @@ function setShareStatus(message){
 }
 
 function updateSnsLinks(text, url = SHARE_URL){
+  const shareTextWithUrl = text ? `${text} ${url}` : '';
   const entries = [
     {
       el: shareXLink,
-      href: text ? `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}` : '#'
+      href: shareTextWithUrl ? `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareTextWithUrl)}` : '#'
     },
     {
       el: shareLineLink,
-      href: text ? `https://line.me/R/msg/text/?${encodeURIComponent(`${text}\n${url}`)}` : '#'
+      href: shareTextWithUrl ? `https://line.me/R/msg/text/?${encodeURIComponent(shareTextWithUrl)}` : '#'
     },
     {
       el: shareFacebookLink,
-      href: text ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(text)}` : '#'
+      href: shareTextWithUrl ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(shareTextWithUrl)}` : '#'
     }
   ];
   for (const entry of entries){
     if (!entry.el) continue;
-    if (text){
+    if (shareTextWithUrl){
       entry.el.href = entry.href;
       entry.el.classList.remove('is-disabled');
       entry.el.setAttribute('aria-disabled', 'false');
@@ -119,6 +122,10 @@ function updateSnsLinks(text, url = SHARE_URL){
       entry.el.setAttribute('aria-disabled', 'true');
     }
   }
+}
+
+function buildShareTextWithUrl(text = lastShareText, url = SHARE_URL){
+  return text ? `${text} ${url}` : '';
 }
 
 function resetShareArtifacts(){
@@ -143,6 +150,27 @@ function resetShareArtifacts(){
 }
 
 resetShareArtifacts();
+
+function supportsFileShare(){
+  if (!shareFile) return false;
+  if (!navigator.share || !navigator.canShare) return false;
+  try {
+    return navigator.canShare({ files: [shareFile] });
+  } catch (err) {
+    return false;
+  }
+}
+
+async function shareViaWebShare(text){
+  if (!supportsFileShare()) throw Object.assign(new Error('unsupported'), { name: 'NotSupportedError' });
+  await navigator.share({
+    title: SHARE_TITLE,
+    text,
+    url: SHARE_URL,
+    files: [shareFile],
+  });
+  setShareStatus('画像付きで共有メニューを開きました。投稿を完了してください。');
+}
 
 // 効果音＆演出
 let audioEnabled = true;
@@ -970,7 +998,7 @@ async function fallbackShare(text, url){
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    parts.push('画像をダウンロードしました。');
+    parts.push('画像をダウンロードしました。投稿画面で添付してください。');
     if (!sharePreviewUrl){
       setTimeout(()=>URL.revokeObjectURL(downloadUrl), 1000);
     }
@@ -996,22 +1024,14 @@ async function fallbackShare(text, url){
 }
 
 async function attemptShareFlow(text, url){
+  const textWithUrl = buildShareTextWithUrl(text, url);
   try{
-    if (shareFile && navigator.canShare){
-      let canShareFiles = false;
-      try{
-        canShareFiles = navigator.canShare({ files:[shareFile] });
-      }catch(err){
-        canShareFiles = false;
-      }
-      if (canShareFiles && navigator.share){
-        await navigator.share({ title:'ぶりゲーム', text, url, files:[shareFile] });
-        setShareStatus('シェアできました！');
-        return;
-      }
+    if (supportsFileShare()){
+      await shareViaWebShare(textWithUrl);
+      return;
     }
     if (navigator.share){
-      await navigator.share({ title:'ぶりゲーム', text:`${text}\n${url}` });
+      await navigator.share({ title: SHARE_TITLE, text: textWithUrl, url });
       setShareStatus('画像なしでシェアしました。');
       return;
     }
@@ -1035,7 +1055,7 @@ function triggerGameOver(){
   resetShareArtifacts();
   setShareStatus('スクリーンショットを準備中…');
   if (shareBtn) shareBtn.disabled = true;
-  lastShareText = `スコア ${score.toLocaleString()} 点！ #ぶりゲーム`;
+  lastShareText = `スコア ${score.toLocaleString()} 点！ ${SHARE_HASHTAGS}`;
   updateSnsLinks(lastShareText, SHARE_URL);
   requestAnimationFrame(()=>{
     prepareGameoverShare().finally(()=>{
@@ -1074,7 +1094,7 @@ if (shareBtn){
     }
     shareBtn.textContent = 'シェア中…';
     if (!lastShareText){
-      lastShareText = `スコア ${score.toLocaleString()} 点！ #ぶりゲーム`;
+      lastShareText = `スコア ${score.toLocaleString()} 点！ ${SHARE_HASHTAGS}`;
       updateSnsLinks(lastShareText, SHARE_URL);
     }
     const shareText = lastShareText;
@@ -1086,6 +1106,87 @@ if (shareBtn){
     }
     shareBtn.textContent = defaultLabel;
     shareBtn.disabled = false;
+  });
+}
+
+
+const snsHandlers = [
+  { el: shareXLink, key: 'x' },
+  { el: shareLineLink, key: 'line' },
+  { el: shareFacebookLink, key: 'facebook' }
+];
+
+const snsUrlBuilders = {
+  x: textWithUrl => `https://twitter.com/intent/tweet?text=${encodeURIComponent(textWithUrl)}`,
+  line: textWithUrl => `https://line.me/R/msg/text/?${encodeURIComponent(textWithUrl)}`,
+  facebook: textWithUrl => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(SHARE_URL)}&quote=${encodeURIComponent(textWithUrl)}`
+};
+
+for (const { el, key } of snsHandlers){
+  if (!el) continue;
+  el.addEventListener('click', evt => {
+    if (el.classList.contains('is-disabled')){
+      evt.preventDefault();
+      return;
+    }
+    if (!lastShareText){
+      lastShareText = `スコア ${score.toLocaleString()} 点！ ${SHARE_HASHTAGS}`;
+      updateSnsLinks(lastShareText, SHARE_URL);
+    }
+    const text = lastShareText;
+    const textWithUrl = buildShareTextWithUrl(text);
+    if (!textWithUrl){
+      evt.preventDefault();
+      return;
+    }
+    const builder = snsUrlBuilders[key];
+    const fallbackUrl = builder ? builder(textWithUrl) : '#';
+
+    if (!shareReady){
+      setShareStatus('スクリーンショットを準備中…');
+      prepareGameoverShare().catch(()=>{});
+    }
+
+    if (supportsFileShare()){
+      evt.preventDefault();
+      shareViaWebShare(textWithUrl).catch(err=>{
+        if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')) return;
+        console.warn('Web Share failed', err);
+        setShareStatus('共有メニューを開けませんでした。自動で別の方法に切り替えます。');
+        if (fallbackUrl && fallbackUrl !== '#'){
+          try {
+            window.open(fallbackUrl, '_blank', 'noopener');
+          } catch (openErr) {
+            /* ignore */
+          }
+        }
+        setTimeout(async ()=>{
+          if (!shareReady){
+            try {
+              await prepareGameoverShare();
+            } catch (prepErr) {
+              /* ignore */
+            }
+          }
+          await fallbackShare(text, SHARE_URL);
+        }, 0);
+      });
+      return;
+    }
+
+    if (builder && fallbackUrl && fallbackUrl !== '#' && el.href !== fallbackUrl){
+      el.href = fallbackUrl;
+    }
+    setTimeout(async ()=>{
+      if (!shareReady){
+        try {
+          await prepareGameoverShare();
+        } catch (prepErr) {
+          /* ignore */
+        }
+      }
+      await fallbackShare(text, SHARE_URL);
+    }, 0);
   });
 }
 
