@@ -77,8 +77,6 @@ const shareBtn = document.getElementById('shareBtn');
 const shareStatus = document.getElementById('shareStatus');
 const sharePreviewImg = document.getElementById('sharePreview');
 const shareXLink = document.getElementById('shareX');
-const shareLineLink = document.getElementById('shareLine');
-const shareFacebookLink = document.getElementById('shareFacebook');
 
 const SHARE_URL = window.location.href.split('#')[0];
 const SHARE_HASHTAGS = '#ぶりゲーム #冬の石川県のブリは最高';
@@ -100,14 +98,6 @@ function updateSnsLinks(text, url = SHARE_URL){
     {
       el: shareXLink,
       href: shareTextWithUrl ? `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareTextWithUrl)}` : '#'
-    },
-    {
-      el: shareLineLink,
-      href: shareTextWithUrl ? `https://line.me/R/msg/text/?${encodeURIComponent(shareTextWithUrl)}` : '#'
-    },
-    {
-      el: shareFacebookLink,
-      href: shareTextWithUrl ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(shareTextWithUrl)}` : '#'
     }
   ];
   for (const entry of entries){
@@ -977,7 +967,7 @@ async function prepareGameoverShare(){
       sharePreviewImg.style.display = 'block';
     }
     shareReady = true;
-    setShareStatus('スクリーンショットの準備ができました。SNSボタンからシェアできます。');
+    setShareStatus('スクリーンショットの準備ができました。Xボタンからシェアできます。');
   }catch(err){
     console.warn('Failed to create share image', err);
     shareBlob = null;
@@ -987,9 +977,13 @@ async function prepareGameoverShare(){
   }
 }
 
-async function fallbackShare(text, url){
-  const parts = [];
-  const shareMessage = `${text}\n${url}`;
+async function fallbackShare(text){
+  const textWithUrl = buildShareTextWithUrl(text);
+  if (!textWithUrl){
+    setShareStatus('シェアテキストを準備できませんでした。');
+    return;
+  }
+  let downloaded = false;
   if (shareBlob){
     const downloadUrl = sharePreviewUrl || URL.createObjectURL(shareBlob);
     const a = document.createElement('a');
@@ -998,29 +992,22 @@ async function fallbackShare(text, url){
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    parts.push('画像をダウンロードしました。投稿画面で添付してください。');
     if (!sharePreviewUrl){
       setTimeout(()=>URL.revokeObjectURL(downloadUrl), 1000);
     }
+    downloaded = true;
   }
-  let clipboardSuccess = false;
-  if (navigator.clipboard && navigator.clipboard.writeText){
-    try{
-      await navigator.clipboard.writeText(shareMessage);
-      clipboardSuccess = true;
-      parts.push('スコアとURLをコピーしました。');
-    }catch(err){
-      parts.push('テキストを自動コピーできませんでした。');
+  const intentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(textWithUrl)}`;
+  try{
+    window.open(intentUrl, '_blank', 'noopener');
+  }catch(err){
+    console.warn('Failed to open X share intent', err);
+    if (shareXLink){
+      shareXLink.href = intentUrl;
+      shareXLink.click();
     }
-  } else {
-    parts.push('お使いの環境は自動コピーに対応していません。');
   }
-  if (!clipboardSuccess){
-    parts.push('以下のテキストをコピーしてシェアしてください。');
-    parts.push(shareMessage);
-  }
-  const message = parts.join('\n\n');
-  setShareStatus(message ? `${message}\n\nSNSボタンからも投稿できます。` : 'SNSボタンから投稿できます。');
+  setShareStatus(downloaded ? 'Xの投稿画面を開きました。スクリーンショットは自動保存済みなので、投稿画面で添付してください。' : 'Xの投稿画面を開きました。投稿前にスクリーンショットを保存しているかご確認ください。');
 }
 
 async function attemptShareFlow(text, url){
@@ -1044,7 +1031,7 @@ async function attemptShareFlow(text, url){
     setShareStatus('シェアに失敗しました。');
     return;
   }
-  await fallbackShare(text, url);
+  await fallbackShare(text);
 }
 
 function triggerGameOver(){
@@ -1111,20 +1098,12 @@ if (shareBtn){
 
 
 const snsHandlers = [
-  { el: shareXLink, key: 'x' },
-  { el: shareLineLink, key: 'line' },
-  { el: shareFacebookLink, key: 'facebook' }
+  { el: shareXLink, buildUrl: textWithUrl => `https://twitter.com/intent/tweet?text=${encodeURIComponent(textWithUrl)}` }
 ];
 
-const snsUrlBuilders = {
-  x: textWithUrl => `https://twitter.com/intent/tweet?text=${encodeURIComponent(textWithUrl)}`,
-  line: textWithUrl => `https://line.me/R/msg/text/?${encodeURIComponent(textWithUrl)}`,
-  facebook: textWithUrl => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(SHARE_URL)}&quote=${encodeURIComponent(textWithUrl)}`
-};
-
-for (const { el, key } of snsHandlers){
+for (const { el, buildUrl } of snsHandlers){
   if (!el) continue;
-  el.addEventListener('click', evt => {
+  el.addEventListener('click', async evt => {
     if (el.classList.contains('is-disabled')){
       evt.preventDefault();
       return;
@@ -1139,12 +1118,15 @@ for (const { el, key } of snsHandlers){
       evt.preventDefault();
       return;
     }
-    const builder = snsUrlBuilders[key];
-    const fallbackUrl = builder ? builder(textWithUrl) : '#';
+    const fallbackUrl = buildUrl ? buildUrl(textWithUrl) : '#';
 
     if (!shareReady){
       setShareStatus('スクリーンショットを準備中…');
-      prepareGameoverShare().catch(()=>{});
+      try{
+        await prepareGameoverShare();
+      }catch(err){
+        console.warn('Failed to prepare share before X fallback', err);
+      }
     }
 
     if (supportsFileShare()){
@@ -1153,13 +1135,6 @@ for (const { el, key } of snsHandlers){
         if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')) return;
         console.warn('Web Share failed', err);
         setShareStatus('共有メニューを開けませんでした。自動で別の方法に切り替えます。');
-        if (fallbackUrl && fallbackUrl !== '#'){
-          try {
-            window.open(fallbackUrl, '_blank', 'noopener');
-          } catch (openErr) {
-            /* ignore */
-          }
-        }
         setTimeout(async ()=>{
           if (!shareReady){
             try {
@@ -1168,13 +1143,13 @@ for (const { el, key } of snsHandlers){
               /* ignore */
             }
           }
-          await fallbackShare(text, SHARE_URL);
+          await fallbackShare(text);
         }, 0);
       });
       return;
     }
 
-    if (builder && fallbackUrl && fallbackUrl !== '#' && el.href !== fallbackUrl){
+    if (fallbackUrl && fallbackUrl !== '#' && el.href !== fallbackUrl){
       el.href = fallbackUrl;
     }
     setTimeout(async ()=>{
@@ -1185,7 +1160,7 @@ for (const { el, key } of snsHandlers){
           /* ignore */
         }
       }
-      await fallbackShare(text, SHARE_URL);
+      await fallbackShare(text);
     }, 0);
   });
 }

@@ -52,14 +52,12 @@ canvas{width:100%;height:auto;touch-action:none}
 #sharePreview{max-width:100%;max-height:260px;border-radius:8px;display:none}
 .share-block button{background:var(--accent);color:#052a2a;border:none;border-radius:12px;padding:10px 12px;font-weight:700;cursor:pointer}
 .share-block button:disabled{opacity:.6;cursor:progress}
-.sns-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px}
+.sns-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px;justify-items:center}
 .sns-btn{display:inline-flex;justify-content:center;align-items:center;padding:8px 10px;border-radius:10px;font-size:14px;font-weight:700;color:#fff;text-decoration:none;transition:transform .12s ease,opacity .12s ease}
 .sns-btn.is-disabled{pointer-events:none;opacity:.45;}
 .sns-btn:active{transform:scale(.97)}
 .sns-btn:hover{opacity:.88}
 .sns-x{background:#111}
-.sns-line{background:#00b900}
-.sns-facebook{background:#1877f2}
 .share-status{font-size:12px;min-height:1.2em;opacity:.85;margin:0;white-space:pre-wrap}
 .blink{animation: bl 1s infinite}
 @keyframes bl{50%{opacity:.35}}
